@@ -46,6 +46,9 @@ Open **[localhost:8081](http://localhost:8081)**. Log in with your administrator
 
 The local profile binds to `127.0.0.1`. Its signing key is generated on startup unless `JWT_SECRET` is set, so a server restart invalidates existing tokens. Remove the bootstrap environment variables after creating the administrator.
 
+<img width="1200" height="2925" alt="news-blog-infographic (1)" src="https://github.com/user-attachments/assets/5c889c90-5c01-4468-ab3a-3f90cdb0ca39" />
+
+
 ## 🧭 Find your way
 
 | Page | Purpose |
