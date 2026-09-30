@@ -5,7 +5,11 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "news_comments")
+@Table(name = "news_comments", indexes = {
+    @Index(name = "comments_news_status_created_idx", columnList = "news_id,status,created_at"),
+    @Index(name = "comments_parent_idx", columnList = "parent_id"),
+    @Index(name = "comments_author_news_idx", columnList = "author_id,news_id")
+})
 public class NewsComment {
     public enum Status { PENDING, APPROVED, REJECTED }
     @Id UUID id;
@@ -17,6 +21,19 @@ public class NewsComment {
     @Column(name = "created_at", nullable = false) Instant createdAt;
     @Column(name = "updated_at", nullable = false) Instant updatedAt;
     @Version @Column(nullable = false) long version;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "news_id", insertable = false, updatable = false,
+            foreignKey = @ForeignKey(name = "news_comments_news_id_fkey"))
+    private News article;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "author_id", insertable = false, updatable = false,
+            foreignKey = @ForeignKey(name = "news_comments_author_id_fkey"))
+    private org.example.newsblog.user.AppUser author;
+    @ManyToOne(fetch = FetchType.LAZY, optional = true)
+    @JoinColumn(name = "parent_id", insertable = false, updatable = false,
+            foreignKey = @ForeignKey(name = "news_comments_parent_id_fkey"))
+    private NewsComment parent;
     protected NewsComment() {}
     NewsComment(UUID newsId, UUID authorId, UUID parentId, String body) {
         id = UUID.randomUUID(); this.newsId = newsId; this.authorId = authorId;

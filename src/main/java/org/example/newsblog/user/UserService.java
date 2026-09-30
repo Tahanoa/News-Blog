@@ -15,11 +15,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class UserService {
     private final UserRepository users;
-    private final SecurityLockRepository lock;
+    private final PostgreSqlPrivilegeLock lock;
     private final PasswordEncoder passwords;
     private final String dummyHash;
 
-    public UserService(UserRepository users, SecurityLockRepository lock, PasswordEncoder passwords) {
+    public UserService(UserRepository users, PostgreSqlPrivilegeLock lock, PasswordEncoder passwords) {
         this.users = users;
         this.lock = lock;
         this.passwords = passwords;

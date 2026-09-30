@@ -7,7 +7,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 @Entity
-@Table(name = "news_images")
+@Table(name = "news_images", indexes = @Index(name = "images_news_idx", columnList = "news_id"))
 public class NewsImage {
     @Id UUID id;
     @Column(name = "news_id", nullable = false) UUID newsId;
@@ -19,6 +19,15 @@ public class NewsImage {
     @Column(name = "byte_size", nullable = false) int byteSize;
     @JdbcTypeCode(SqlTypes.VARBINARY) @Column(nullable = false, columnDefinition = "bytea") byte[] data;
     @Column(name = "created_at", nullable = false) Instant createdAt;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "news_id", insertable = false, updatable = false,
+            foreignKey = @ForeignKey(name = "news_images_news_id_fkey"))
+    private News article;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "uploader_id", insertable = false, updatable = false,
+            foreignKey = @ForeignKey(name = "news_images_uploader_id_fkey"))
+    private org.example.newsblog.user.AppUser uploader;
     protected NewsImage() {}
     NewsImage(UUID newsId, UUID uploaderId, String type, String alt, int width, int height, byte[] data) {
         id = UUID.randomUUID(); this.newsId = newsId; this.uploaderId = uploaderId;

@@ -37,7 +37,6 @@ class JwtSecurityTests {
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", () -> "jdbc:h2:mem:jwt-tests;MODE=PostgreSQL;DB_CLOSE_DELAY=-1");
         registry.add("ai.ollama.base-url", () -> "http://127.0.0.1:1");
     }
 

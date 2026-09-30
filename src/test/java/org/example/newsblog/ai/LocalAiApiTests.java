@@ -77,7 +77,6 @@ class LocalAiApiTests {
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("ai.ollama.base-url", () -> "http://127.0.0.1:" + OLLAMA.getAddress().getPort());
         registry.add("ai.ollama.read-timeout", () -> "500ms");
-        registry.add("spring.datasource.url", () -> "jdbc:h2:mem:ai-tests;MODE=PostgreSQL;DB_CLOSE_DELAY=-1");
     }
 
     @BeforeEach

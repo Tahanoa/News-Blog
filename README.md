@@ -8,8 +8,8 @@ available at `/`, `/login`, and `/register`.
 
 All application profiles use PostgreSQL. The default connection is
 `jdbc:postgresql://localhost:5432/postgres` with username `postgres`.
-Set the PostgreSQL password before starting; H2 is a test-only dependency and is not
-included in the application runtime.
+Set the PostgreSQL password before starting. PostgreSQL is the only supported database
+for application profiles and tests.
 
 Stop any previous application on the same port. From the project directory:
 
@@ -71,10 +71,12 @@ the defaults connect to your existing local `postgres` database as user `postgre
 is Base64-encoded random bytes (minimum 32 bytes); the application fails startup without it
 outside local/test profiles. Set optional bootstrap credentials as described above.
 
-Flyway applies `db/migration/V1__users.sql`; Hibernate validates the schema and does not
-create/update/drop tables automatically. If using an existing nonempty database, review the
-migration and schema history first; no automatic Flyway baseline or destructive schema change
-is enabled. PostgreSQL credentials are read from the environment, not hardcoded.
+Hibernate creates and updates PostgreSQL tables from the JPA entities with
+`spring.jpa.hibernate.ddl-auto=update`. Flyway and SQL migration files have been removed;
+`V1__users.sql` is not required or executed. Existing application data and any old migration
+history table are left in place. Foreign keys are defined in the entity mappings. Privilege
+changes use a PostgreSQL transaction advisory lock, without a seed table or SQL script.
+PostgreSQL credentials are read from the environment, not hardcoded.
 
 When deploying, terminate HTTPS correctly, protect the database/backups and signing key,
 and configure explicit trusted origins/proxies only when required. The current UI is same-origin;
@@ -228,8 +230,10 @@ Handled errors return `code` / `message`. No raw database or Ollama error bodies
 ./mvnw clean test
 ```
 
-Tests use isolated H2 databases with Flyway and an HTTP Ollama stub; they need neither
-PostgreSQL nor a downloaded model. They cover signup/password hashing, login, all roles,
+Tests require a dedicated disposable PostgreSQL database configured through `TEST_DB_URL`,
+`TEST_DB_USERNAME` and `TEST_DB_PASSWORD`. The test profile uses `create-drop`, so never point
+these variables at a database containing data you want to keep. No test database is created
+by this update and no tests were run. Ollama tests use an HTTP stub instead of a downloaded model. They cover signup/password hashing, login, all roles,
 privilege injection, disabled users, logout/password/access-change revocation, expired/tampered
 tokens, issuer/audience/required claims, strong-key configuration, last-admin protection,
 request limits, static pages/CSP and AI behavior. Live PostgreSQL connectivity and actual
@@ -291,9 +295,8 @@ put tokens in image query strings. No public image or news API bypass exists.
 
 Comments support one reply level, with an approved top-level parent on the same news item.
 Maximum 100 comments/user/article. Pagination sizes are 1 to 100. Mutations serialize on the
-article; news/comments also use optimistic versions to return 409 for stale updates. Flyway
-`V2__news_comments_images.sql` creates tables, foreign keys and indexes without deleting
-existing users. News ownership and comment moderation are checked in the service against
+article; news/comments also use optimistic versions to return 409 for stale updates.
+Hibernate manages tables and foreign keys directly in PostgreSQL, without migration scripts. News ownership and comment moderation are checked in the service against
 JWT-authenticated identity; client-supplied authors, roles and publication fields are rejected.
 
 This content update has not been tested against a running application or PostgreSQL database.
