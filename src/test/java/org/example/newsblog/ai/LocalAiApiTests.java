@@ -22,10 +22,16 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.example.newsblog.user.AppUser;
+import org.example.newsblog.user.Role;
+import org.example.newsblog.user.UserRepository;
+import org.example.newsblog.security.JwtTokens;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@ActiveProfiles("ai-local")
+@ActiveProfiles("test")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class LocalAiApiTests {
     private static final HttpServer OLLAMA = startOllama();
@@ -37,6 +43,10 @@ class LocalAiApiTests {
     private final HttpClient client = HttpClient.newHttpClient();
     private final JsonMapper mapper = JsonMapper.builder().build();
     @Value("${local.server.port}") int port;
+    @Autowired UserRepository users;
+    @Autowired JwtTokens tokens;
+    @Autowired PasswordEncoder passwords;
+    private String token;
 
     private static HttpServer startOllama() {
         try {
@@ -67,8 +77,7 @@ class LocalAiApiTests {
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("ai.ollama.base-url", () -> "http://127.0.0.1:" + OLLAMA.getAddress().getPort());
         registry.add("ai.ollama.read-timeout", () -> "500ms");
-        registry.add("spring.security.user.name", () -> "ai-test");
-        registry.add("spring.security.user.password", () -> "local-test");
+        registry.add("spring.datasource.url", () -> "jdbc:h2:mem:ai-tests;DB_CLOSE_DELAY=-1");
     }
 
     @BeforeEach
@@ -77,6 +86,9 @@ class LocalAiApiTests {
         CALLS.set(0);
         DELAY_MS.set(0);
         BODY.set("{\"message\":{\"content\":\"متن نهایی\",\"thinking\":\"private analysis\"},\"done\":true,\"done_reason\":\"stop\"}");
+        AppUser admin = users.findByUsername("ai-admin").orElseGet(() -> users.saveAndFlush(
+                new AppUser("ai-admin", "ai-admin@example.com", passwords.encode("test-password-123"), Role.ADMIN)));
+        token = tokens.issue(admin).accessToken();
     }
 
     @AfterAll
@@ -87,7 +99,7 @@ class LocalAiApiTests {
     private HttpResponse<String> request(String path, String body, boolean authenticated) throws Exception {
         var builder = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/admin/ai/" + path))
                 .timeout(Duration.ofSeconds(10));
-        if (authenticated) builder.header("Authorization", "Basic YWktdGVzdDpsb2NhbC10ZXN0");
+        if (authenticated) builder.header("Authorization", "Bearer " + token);
         if (body != null) builder.header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body));
         return client.send(builder.build(), HttpResponse.BodyHandlers.ofString());

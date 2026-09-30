@@ -3,14 +3,12 @@ package org.example.newsblog.ai;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
-import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@Profile("ai-local")
 @RequestMapping("/api/admin/ai")
 class AiTextController {
     private final AiTextService service;
