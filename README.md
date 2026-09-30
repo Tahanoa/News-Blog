@@ -6,15 +6,26 @@ available at `/`, `/login`, and `/register`.
 
 ## Run locally — Git Bash
 
+All application profiles use PostgreSQL. The default connection is
+`jdbc:postgresql://localhost:5432/postgres` with username `postgres`.
+Set the PostgreSQL password before starting; H2 is a test-only dependency and is not
+included in the application runtime.
+
 Stop any previous application on the same port. From the project directory:
+
+```bash
+read -r -s -p 'PostgreSQL password: ' DB_PASSWORD
+export DB_PASSWORD
+```
+
+Then start the application:
 
 ```bash
 ./mvnw clean spring-boot:run -Dspring-boot.run.profiles=ai-local -Dspring-boot.run.arguments=--server.port=8081
 ```
 
-Open **http://localhost:8081/login**. The `ai-local` profile binds to `127.0.0.1` and persists
-users in an H2 file under `data/`; PostgreSQL is not needed in this profile. The H2 web console
-is disabled. The default profile uses PostgreSQL and requires explicit configuration below.
+Open **http://localhost:8081/login**. The `ai-local` profile binds to `127.0.0.1` and
+stores users in the configured PostgreSQL database, just like the default profile.
 Use `clean` for the first run after this upgrade to remove the old Basic-auth configuration class.
 
 ### Create the first administrator
@@ -39,6 +50,8 @@ the initial account is created. If any bootstrap value is set, all three are req
 PowerShell alternative (**run in PowerShell, not Git Bash**):
 
 ```powershell
+$databasePassword = Read-Host 'PostgreSQL password' -AsSecureString
+$env:DB_PASSWORD = [System.Net.NetworkCredential]::new('', $databasePassword).Password
 $env:ADMIN_USERNAME = 'admin'
 $env:ADMIN_EMAIL = 'your-real-email@example.com'
 $secret = Read-Host 'Choose an admin password (12+ characters)' -AsSecureString
@@ -53,8 +66,8 @@ Never commit a signing key, database password, admin password, or `.env` file.
 
 ## PostgreSQL / default profile
 
-Create a dedicated empty database and set `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, and
-`JWT_SECRET`. Example URL: `jdbc:postgresql://localhost:5432/news_blog`. The signing secret
+Set `DB_PASSWORD` and `JWT_SECRET`. Optionally override `DB_URL` and `DB_USERNAME`;
+the defaults connect to your existing local `postgres` database as user `postgres`. The signing secret
 is Base64-encoded random bytes (minimum 32 bytes); the application fails startup without it
 outside local/test profiles. Set optional bootstrap credentials as described above.
 
