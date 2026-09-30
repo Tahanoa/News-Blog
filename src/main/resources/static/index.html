@@ -1,46 +1,30 @@
 <!doctype html>
 <html lang="en" dir="ltr">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Login and signup | News Blog</title>
-    <link rel="stylesheet" href="/auth.css">
-    <script src="/auth.js" defer></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>News Blog</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
 </head>
 <body>
-<main class="card">
-    <p class="brand">News Blog</p>
-    <h1 id="title">Log in</h1>
-    <p id="intro">Log in to access your account.</p>
-    <div class="tabs" id="tabs">
-        <button type="button" id="login-tab" aria-pressed="true">Log in</button>
-        <button type="button" id="register-tab" aria-pressed="false">Sign up</button>
-    </div>
-    <form id="auth-form">
-        <label for="username">Username</label>
-        <input id="username" name="username" dir="ltr" required minlength="3" maxlength="40"
-               pattern="[a-zA-Z0-9_.-]{3,40}" autocomplete="username">
-        <small>3 to 40 ASCII letters, digits, dots, hyphens or underscores</small>
-        <div id="email-field" hidden>
-            <label for="email">Email</label>
-            <input id="email" name="email" type="email" dir="ltr" maxlength="254" autocomplete="email">
-        </div>
-        <label for="password">Password</label>
-        <input id="password" name="password" type="password" dir="ltr" required maxlength="72" autocomplete="current-password">
-        <small id="password-help" hidden>At least 12 characters; at most 72 UTF-8 bytes</small>
-        <button id="submit" class="primary" type="submit">Log in</button>
-    </form>
-    <section id="account" hidden>
-        <h2>Your account</h2>
-        <dl>
-            <dt>Username</dt><dd id="account-username"></dd>
-            <dt>Email</dt><dd id="account-email" dir="ltr"></dd>
-            <dt>Role</dt><dd id="account-role"></dd>
-            <dt>Status</dt><dd id="account-enabled"></dd>
-        </dl>
-        <button id="logout" type="button" class="primary">Revoke all tokens</button>
-    </section>
-    <p id="message" role="status" aria-live="polite"></p>
+<header>
+  <a href="/" data-route class="brand">News Blog</a>
+  <nav aria-label="Main navigation">
+    <a href="/" data-route>News</a>
+    <a href="/reporter" data-route id="reporter-link" hidden>Reporter panel</a>
+    <a href="/admin" data-route id="admin-link" hidden>Admin panel</a>
+    <a href="/login" data-route id="login-link">Log in</a>
+    <a href="/register" data-route id="register-link">Sign up</a>
+    <button type="button" id="logout" hidden>Log out</button>
+  </nav>
+  <p id="identity"></p>
+</header>
+<main>
+  <p id="message" role="status" aria-live="polite" hidden></p>
+  <section id="page" aria-live="polite"><p>Loading...</p></section>
+  <noscript>Enable JavaScript to use the news and account pages.</noscript>
 </main>
+<footer>Initial prototype. News, comments and image requests use Bearer JWT authentication.</footer>
 </body>
 </html>

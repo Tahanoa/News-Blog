@@ -75,7 +75,7 @@ class SecurityConfiguration {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .requestCache(cache -> cache.disable())
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.GET, "/", "/login", "/register", "/index.html", "/auth.js", "/auth.css").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/", "/login", "/register", "/index.html", "/auth.js", "/auth.css", "/app.js", "/app.css", "/admin", "/reporter", "/news", "/news/*").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
                         .requestMatchers("/api/admin/ai/**").hasAnyRole("REPORTER", "ADMIN")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
@@ -92,7 +92,7 @@ class SecurityConfiguration {
                         .accessDeniedHandler((request, response, exception) ->
                                 SecurityResponses.error(response, 403, "FORBIDDEN")))
                 .headers(headers -> headers
-                        .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"))
+                        .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"))
                         .referrerPolicy(referrer -> referrer.policy(org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER)))
                 .addFilterBefore(new ApiRequestGuard(), BearerTokenAuthenticationFilter.class)
                 .build();

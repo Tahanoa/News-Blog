@@ -1,0 +1,39 @@
+* { box-sizing: border-box; }
+body { margin: 0; font: 16px/1.6 system-ui, sans-serif; color: #172033; background: #f5f6f8; }
+header, main, footer { max-width: 1100px; margin: auto; padding: 20px; }
+header { border-bottom: 1px solid #ccd2dc; }
+nav, .actions, .pager { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+a { color: #164da0; }
+.brand { font-size: 24px; font-weight: bold; }
+button, input, textarea, select { font: inherit; padding: 8px 12px; border: 1px solid #aeb8c7; border-radius: 4px; }
+button { cursor: pointer; background: #fff; }
+button.primary { color: #fff; background: #164da0; }
+button:disabled { cursor: wait; opacity: .6; }
+form { display: grid; gap: 14px; }
+label { display: grid; gap: 4px; }
+input, textarea, select { width: 100%; background: #fff; }
+input[type=checkbox] { width: auto; }
+textarea { min-height: 110px; resize: vertical; }
+textarea.code { min-height: 240px; font-family: monospace; }
+.card, article, .comment { padding: 20px; margin: 16px 0; background: #fff; border: 1px solid #d4dae3; border-radius: 6px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+.grid .card { margin: 0; }
+.filters { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; margin: 20px 0; }
+.filters label { flex: 1; min-width: 150px; }
+.meta, small, footer { color: #596477; font-size: 14px; }
+#message { border: 1px solid #d5a124; background: #fff5d9; padding: 12px; white-space: pre-wrap; }
+#message.success { background: #e9f7ee; border-color: #479966; }
+.auth { max-width: 480px; }
+.article-body { overflow-wrap: anywhere; }
+.article-body table { border-collapse: collapse; max-width: 100%; display: block; overflow: auto; }
+.article-body td, .article-body th { border: 1px solid #ccc; padding: 6px; }
+.article-body pre { overflow: auto; }
+img { display: block; max-width: 100%; max-height: 400px; object-fit: contain; }
+figure { margin: 16px 0; }
+.reply { margin-inline-start: 24px; }
+pre.output { white-space: pre-wrap; overflow-wrap: anywhere; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: start; padding: 10px; border-bottom: 1px solid #ddd; }
+[hidden] { display: none !important; }
+:focus-visible { outline: 3px solid #e3aa25; outline-offset: 2px; }

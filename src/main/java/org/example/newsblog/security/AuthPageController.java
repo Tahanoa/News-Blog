@@ -5,6 +5,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 
 @Controller
 class AuthPageController {
-    @GetMapping({"/", "/login", "/register"})
+    @GetMapping({"/", "/login", "/register", "/admin", "/reporter", "/news", "/news/{id}"})
     String page() { return "forward:/index.html"; }
 }

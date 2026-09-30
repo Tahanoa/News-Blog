@@ -2,7 +2,7 @@
 
 Spring Boot 4.1.1 / Java 17+ news-project foundation with persistent users, JWT authentication,
 role authorization and local Ollama text generation. A minimal English login/signup page is
-available at `/`, `/login`, and `/register`.
+available at `/login` and `/register`. The home page and role panels share a small client-side app.
 
 ## Run locally — Git Bash
 
@@ -300,3 +300,31 @@ Hibernate manages tables and foreign keys directly in PostgreSQL, without migrat
 JWT-authenticated identity; client-supplied authors, roles and publication fields are rejected.
 
 This content update has not been tested against a running application or PostgreSQL database.
+
+
+## Initial browser pages
+
+| URL | Page |
+|---|---|
+| `/` or `/news` | Published news with search, category filter and pagination |
+| `/news/{uuid}` | Article HTML, protected images, comment submission/replies, author editing and permitted moderation |
+| `/reporter` | Own drafts for reporters; all articles for admins; editor, image upload/delete/cover and Persian AI helper |
+| `/admin` | Paginated accounts, role/enabled controls and link to editorial publication controls |
+| `/login`, `/register` | Minimal account forms |
+
+UI labels and source instructions are English. Persian article/comment text is rendered with
+automatic text direction; the AI helper requests Persian output and can place it into the editor.
+Use ADMIN bootstrap credentials to create the first manager, then assign REPORTER from the
+admin panel. Only admins publish, archive or return news to draft in the editorial panel.
+
+The browser uses in-app navigation to preserve its in-memory Bearer token; it stores no JWT in
+cookies, localStorage or sessionStorage. Refreshing, opening a separate tab or following a link
+outside the app requires login again. All news content remains protected by the existing JWT APIs.
+Page shells/assets are public so the login screen can load; backend checks protect actual data.
+Protected image bytes are fetched with the Bearer header and displayed via temporary Blob URLs.
+The client shows approved comments and the current author's pending comments; article editors
+also see the moderation queue. API failures are displayed above the active page.
+
+Image upload/deletion saves the current editor fields first. Review HTML and AI output before
+publishing. The prototype has basic responsive styling and no external framework/CDN dependency.
+No browser or integration tests were run for this UI update.
