@@ -37,3 +37,5 @@ table { width: 100%; border-collapse: collapse; }
 th, td { text-align: start; padding: 10px; border-bottom: 1px solid #ddd; }
 [hidden] { display: none !important; }
 :focus-visible { outline: 3px solid #e3aa25; outline-offset: 2px; }
+
+.inline-image { display: block; margin: 20px 0; }

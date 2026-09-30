@@ -27,6 +27,11 @@ class AiTextController {
         return service.generate(request.prompt());
     }
 
+    @PostMapping("/news-draft")
+    AiTextService.NewsDraft draft(@Valid @RequestBody GenerateRequest request) {
+        return service.newsDraft(request.prompt());
+    }
+
     @ExceptionHandler(AiTextService.AiException.class)
     ResponseEntity<ApiError> aiError(AiTextService.AiException exception) {
         return ResponseEntity.status(exception.status).body(new ApiError(exception.code, exception.getMessage()));

@@ -4,6 +4,31 @@
     const message = document.getElementById('message');
     let token = null, user = null, expiryTimer = null, controller = null, revision = 0, fieldSequence = 0;
     const urls = new Set();
+    const storageKey = 'news-blog-access';
+    function storeAuth(result) {
+        const expiresAt = Date.now() + result.expiresIn * 1000;
+        try { sessionStorage.setItem(storageKey, JSON.stringify({ token: result.accessToken, expiresAt })); }
+        catch { /* Restricted storage falls back to the active tab's memory. */ }
+        expireAt(expiresAt);
+    }
+    function expireAt(expiresAt) {
+        clearTimeout(expiryTimer);
+        expiryTimer = setTimeout(() => {
+            clearAuth(); render(); notice('Your access token expired. Log in to continue editing or commenting.');
+        }, Math.max(0, expiresAt - Date.now()));
+    }
+    async function restoreAuth() {
+        try {
+            const stored = JSON.parse(sessionStorage.getItem(storageKey) || 'null');
+            if (stored && typeof stored.token === 'string' && stored.token.length < 10000
+                    && Number.isFinite(stored.expiresAt) && stored.expiresAt > Date.now()) {
+                token = stored.token;
+                user = await api('/api/users/me', { restore: true });
+                expireAt(stored.expiresAt); header(); return;
+            }
+        } catch { /* Missing, expired, revoked or invalid tokens are removed. */ }
+        clearAuth();
+    }
     const admin = () => user?.role === 'ADMIN';
     const reporter = () => admin() || user?.role === 'REPORTER';
     const owns = n => admin() || reporter() && n.authorId === user?.id;
@@ -26,7 +51,9 @@
         document.getElementById('logout').hidden = !user;
     }
     function clearAuth() {
-        token = null; user = null; clearTimeout(expiryTimer); header();
+        token = null; user = null; clearTimeout(expiryTimer);
+        try { sessionStorage.removeItem(storageKey); } catch { /* Storage may be disabled. */ }
+        header();
     }
     function go(path, replace = false) {
         history[replace ? 'replaceState' : 'pushState']({}, '', path);
@@ -48,7 +75,7 @@
         if (error.name === 'AbortError') return;
         notice(error instanceof TypeError ? 'Cannot connect to the server.' : error.message);
     }
-    async function api(path, { method = 'GET', body, binary = false, type } = {}) {
+    async function api(path, { method = 'GET', body, binary = false, type, restore = false } = {}) {
         const headers = { Accept: binary ? 'image/png, image/jpeg' : 'application/json' };
         if (token) headers.Authorization = `Bearer ${token}`;
         if (body !== undefined) headers['Content-Type'] = type || 'application/json; charset=utf-8';
@@ -60,7 +87,11 @@
         if (!response.ok) {
             const error = await response.json().catch(() => ({}));
             if (response.status === 401 && token) {
-                clearAuth(); render();
+                clearAuth();
+                if (!restore && method === 'GET' && /^\/api\/(news|images)(?:\/|\?|$)/.test(path)) {
+                    render(); return api(path, { method, body, binary, type });
+                }
+                if (!restore) render();
                 throw new Error('Your token expired or was revoked. Log in again.');
             }
             throw new Error(error.message || `Request failed (${response.status}).`);
@@ -96,7 +127,7 @@
     function when(value) { return value ? new Date(value).toLocaleString() : 'Not published'; }
     function auth(signup, returnTo) {
         const card = el('div', undefined, 'card auth'); card.append(el('h1', signup ? 'Sign up' : 'Log in'));
-        card.append(el('p', 'A Bearer token is required to read news and use the panels.'));
+        card.append(el('p', 'Published news is public. Log in to comment or use your panel.'));
         const form = el('form');
         const username = field(form, 'username', 'Username', { min: 3, max: 40 });
         username.pattern = '[a-zA-Z0-9_.-]{3,40}'; username.autocomplete = 'username';
@@ -113,8 +144,7 @@
             }
             const result = await api('/api/auth/login', { method: 'POST', body });
             token = result.accessToken; user = result.user; password.value = ''; header();
-            clearTimeout(expiryTimer);
-            expiryTimer = setTimeout(() => { clearAuth(); render(); notice('Your token expired. Log in again.'); }, result.expiresIn * 1000);
+            storeAuth(result);
             go(returnTo || '/');
         });
         card.append(form, link(signup ? 'Already registered? Log in' : 'Create an account', signup ? '/login' : '/register'));
@@ -132,9 +162,16 @@
     function safeHtml(html) {
         // Only backend-sanitized article HTML enters this renderer. Reapply a client allowlist as well.
         const doc = new DOMParser().parseFromString(html, 'text/html');
-        const tags = new Set('a b blockquote br caption cite code col colgroup dd div dl dt em h1 h2 h3 h4 h5 h6 i li ol p pre q small span strike strong sub sup table tbody td tfoot th thead tr u ul'.split(' '));
+        const tags = new Set('img a b blockquote br caption cite code col colgroup dd div dl dt em h1 h2 h3 h4 h5 h6 i li ol p pre q small span strike strong sub sup table tbody td tfoot th thead tr u ul'.split(' '));
         for (const node of [...doc.body.querySelectorAll('*')]) {
             if (!tags.has(node.localName)) { node.remove(); continue; }
+            if (node.localName === 'img') {
+                const id = node.getAttribute('data-image-id');
+                if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id || '')) { node.remove(); continue; }
+                const placeholder = el('span', undefined, 'inline-image');
+                placeholder.dataset.imageId = id; placeholder.dataset.alt = node.getAttribute('alt') || '';
+                node.replaceWith(placeholder); continue;
+            }
             for (const attr of [...node.attributes]) {
                 if (node.localName === 'a' && attr.name === 'href') {
                     try { if (!['https:', 'http:', 'mailto:'].includes(new URL(attr.value, location.origin).protocol)) node.removeAttribute(attr.name); }
@@ -203,6 +240,11 @@
         const summary = field(form, 'summary', 'Summary', { value: n?.summary || '', max: 1000, rows: 3 }); summary.dir = 'auto';
         const category = field(form, 'category', 'Category', { value: n?.category || 'General', max: 80 }); category.dir = 'auto';
         const html = field(form, 'bodyHtml', 'Article HTML', { value: n?.bodyHtml || '<p></p>', max: 20000, rows: 12 }); html.className = 'code'; html.dir = 'auto';
+        function insertImage(i) {
+            const img = el('img'); img.dataset.imageId = i.id; img.alt = i.altText || '';
+            html.setRangeText('\n' + img.outerHTML + '\n', html.selectionStart, html.selectionEnd, 'end');
+            html.focus();
+        }
         const cover = select(form, 'coverImageId', 'Cover image', [['', 'No cover']], '');
         form.append(el('small', 'HTML is sanitized by the server. Saving a draft does not publish it.'));
         async function saveCurrent() {
@@ -224,32 +266,49 @@
                 const option = el('option', `${i.altText || i.id} (${i.contentType})`); option.value = i.id; cover.append(option);
                 const figure = el('figure'); figure.append(el('figcaption', `${i.altText || 'Image'} | ${i.width} x ${i.height} | ${i.byteSize} bytes`));
                 image(figure, i.id, i.altText, stamp);
+                figure.append(button('Insert in article', () => { insertImage(i); notice('Image inserted in HTML. Save changes to keep it.', true); }));
                 figure.append(button('Delete image', async () => { await saveCurrent(); await api(`/api/images/${i.id}`, { method: 'DELETE' }); if (stamp === revision) await editor(id, stamp); }));
                 media.append(figure);
             }
             cover.value = n.coverImageId || '';
             const upload = el('form'); const file = field(upload, 'file', 'PNG or JPEG, maximum 5 MiB', { type: 'file' }); file.accept = 'image/png,image/jpeg';
             const alt = field(upload, 'alt', 'Alt text', { required: false, max: 300 });
+            const inlineLabel = el('label', 'Insert this image inside article HTML');
+            const inline = el('input'); inline.type = 'checkbox'; inline.checked = true; inlineLabel.append(inline); upload.append(inlineLabel);
             submit(upload, 'Upload image', async () => {
                 const selected = file.files[0]; if (!selected) throw new Error('Select an image.');
                 if (selected.size > 5 * 1024 * 1024) throw new Error('Maximum image size is 5 MiB.');
                 const type = selected.type || (/\.png$/i.test(selected.name) ? 'image/png' : 'image/jpeg');
                 if (!form.reportValidity()) return;
                 await saveCurrent();
-                await api(`/api/news/${id}/images?alt=${encodeURIComponent(alt.value)}`, { method: 'POST', body: selected, type });
+                const uploaded = await api(`/api/news/${id}/images?alt=${encodeURIComponent(alt.value)}`, { method: 'POST', body: selected, type });
+                if (inline.checked) { insertImage(uploaded); await saveCurrent(); }
                 if (stamp !== revision) return;
-                await editor(id, stamp); notice('Image uploaded. Select it as cover and save if needed.', true);
+                await editor(id, stamp); notice('Image uploaded. Inline insertion is saved when selected; cover remains a separate choice.', true);
             }); media.append(upload); page.append(media);
         } else page.append(el('p', 'Save the draft before uploading images.'));
         const ai = el('section', undefined, 'card'); ai.append(el('h2', 'Local AI assistant'));
         const aiForm = el('form'); const prompt = field(aiForm, 'prompt', 'Instructions or source text (final output will be Persian)', { max: 12000, rows: 4 }); prompt.dir = 'auto';
         const output = el('pre', undefined, 'output'); output.dir = 'auto';
         const use = el('div', undefined, 'actions');
-        submit(aiForm, 'Generate Persian text', async () => {
-            const result = await api('/api/admin/ai/generate', { method: 'POST', body: { prompt: prompt.value } }); output.textContent = result.text;
+        submit(aiForm, 'Fill all news fields with AI', async () => {
+            const result = await api('/api/admin/ai/news-draft', { method: 'POST', body: { prompt: prompt.value } });
+            if (stamp !== revision) return;
+            title.value = result.title; summary.value = result.summary;
+            category.value = result.category; html.value = result.bodyHtml;
+            output.textContent = 'Title, summary, category and full article HTML filled in Persian.';
+            use.replaceChildren();
+            notice('AI filled every text field. Review the article and save; cover, ownership and publication status stay under your control.', true);
+        });
+        aiForm.append(button('Generate text only', async () => {
+            if (!prompt.reportValidity()) return;
+            const result = await api('/api/admin/ai/generate', { method: 'POST', body: { prompt: prompt.value } });
+            if (stamp !== revision) return;
+            output.textContent = result.text;
             use.replaceChildren(button('Use as summary', () => { summary.value = result.text.slice(0, 1000); }), button('Use as article text', () => { const p = el('p', result.text); html.value = p.outerHTML; }));
             if (result.truncated) notice('AI output reached its limit. Review the draft before saving.');
-        }); ai.append(aiForm, output, use); page.append(ai);
+        }));
+        ai.append(aiForm, output, use); page.append(ai);
     }
     async function detail(id, stamp) {
         const n = await api(`/api/news/${id}`); if (stamp !== revision) return;
@@ -258,11 +317,16 @@
         const summary = el('p', n.summary); summary.dir = 'auto';
         article.append(title, el('p', `${n.category} | ${n.status} | ${when(n.publishedAt)}`, 'meta'), summary);
         if (n.coverImageId) { const cover = el('figure'); article.append(cover); image(cover, n.coverImageId, n.title, stamp); }
-        article.append(safeHtml(n.bodyHtml)); page.append(article);
+        const body = safeHtml(n.bodyHtml); article.append(body); page.append(article);
+        for (const placeholder of body.querySelectorAll('[data-image-id]'))
+            image(placeholder, placeholder.dataset.imageId, placeholder.dataset.alt, stamp);
         const media = await api(`/api/news/${id}/images?size=100`); if (stamp !== revision) return;
-        if (media.items.length > 1 || media.items.some(i => i.id !== n.coverImageId)) {
+        const displayedImages = new Set([...body.querySelectorAll('[data-image-id]')].map(node => node.dataset.imageId));
+        if (n.coverImageId) displayedImages.add(n.coverImageId);
+        const additionalImages = media.items.filter(i => !displayedImages.has(i.id));
+        if (additionalImages.length) {
             const gallery = el('div', undefined, 'grid');
-            for (const i of media.items.filter(i => i.id !== n.coverImageId)) {
+            for (const i of additionalImages) {
                 const figure = el('figure', undefined, 'card'); figure.append(el('figcaption', i.altText)); image(figure, i.id, i.altText, stamp); gallery.append(figure);
             } page.append(gallery);
         }
@@ -277,11 +341,11 @@
         for (const c of result.items) {
             const card = el('div', undefined, 'comment' + (c.parentId ? ' reply' : ''));
             const body = el('p', c.body); body.dir = 'auto';
-            card.append(body, el('p', `${c.authorId === user.id ? 'You' : c.authorId} | ${c.status} | ${when(c.createdAt)}`, 'meta'));
+            card.append(body, el('p', `${c.authorId === user?.id ? 'You' : c.authorId} | ${c.status} | ${when(c.createdAt)}`, 'meta'));
             if (c.parentId) card.append(el('small', 'Reply to comment ' + c.parentId));
             const actions = el('div', undefined, 'actions');
-            if (n.status === 'PUBLISHED' && c.status === 'APPROVED' && !c.parentId) actions.append(button('Reply', () => { replyTo = c.id; reply.textContent = 'Reply to ' + c.id; text.focus(); }));
-            if (c.authorId === user.id && n.status === 'PUBLISHED') {
+            if (user && n.status === 'PUBLISHED' && c.status === 'APPROVED' && !c.parentId) actions.append(button('Reply', () => { replyTo = c.id; reply.textContent = 'Reply to ' + c.id; text.focus(); }));
+            if (c.authorId === user?.id && n.status === 'PUBLISHED') {
                 actions.append(button('Edit', () => {
                     const editForm = el('form'); const editText = field(editForm, 'body', 'Updated comment', { value: c.body, max: 2000, rows: 3 }); editText.dir = 'auto';
                     submit(editForm, 'Save for approval', async () => {
@@ -295,12 +359,16 @@
                     await api(`/api/comments/${c.id}/moderation`, { method: 'PATCH', body: { version: c.version, status } }); await commentList(n, parent, number, stamp);
                 }));
             }
-            if (owns(n) || c.authorId === user.id) actions.append(button('Delete', async () => {
+            if (owns(n) || c.authorId === user?.id) actions.append(button('Delete', async () => {
                 await api(`/api/comments/${c.id}?version=${c.version}`, { method: 'DELETE' }); await commentList(n, parent, number, stamp);
             })); card.append(actions); parent.append(card);
         }
         pager(parent, number, result.total, result.size, next => commentList(n, parent, next, stamp));
         if (n.status !== 'PUBLISHED') { parent.append(el('p', 'Comments can only be submitted on published news.')); return; }
+        if (!user) {
+            parent.append(link('Log in to leave a comment', '/login?returnTo=' + encodeURIComponent('/news/' + n.id)));
+            return;
+        }
         const form = el('form', undefined, 'card'), reply = el('p', 'New comment'); form.append(reply);
         const text = field(form, 'body', 'Your comment', { max: 2000, rows: 4 }); text.dir = 'auto';
         form.append(button('Cancel reply', () => { replyTo = null; reply.textContent = 'New comment'; }));
@@ -338,8 +406,13 @@
         page.replaceChildren(); notice(''); header();
         const path = location.pathname;
         try {
-            if (!user) { auth(path === '/register', path === '/login' || path === '/register' ? '/' : path + location.search); return; }
-            if (path === '/login' || path === '/register') { go('/', true); return; }
+            if (path === '/login' || path === '/register') {
+                if (user) { go('/', true); return; }
+                const requested = new URLSearchParams(location.search).get('returnTo');
+                const returnTo = requested && /^\/(?!\/)/.test(requested) ? requested : '/';
+                auth(path === '/register', returnTo); return;
+            }
+            if (!user && (path === '/admin' || path === '/reporter')) { auth(false, path + location.search); return; }
             if (path === '/admin') {
                 if (!admin()) { page.append(el('h1', 'Access denied'), el('p', 'Administrator access is required.')); return; }
                 await adminPanel(stamp);
@@ -359,5 +432,5 @@
     document.getElementById('logout').addEventListener('click', event => run(event.target, async () => {
         await api('/api/auth/logout', { method: 'POST' }); clearAuth(); go('/login'); notice('All of your access tokens have been revoked.', true);
     }));
-    render();
+    restoreAuth().then(render);
 })();

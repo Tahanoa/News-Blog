@@ -64,17 +64,59 @@ class AiTextService {
                 "Model is not installed. Run ollama pull " + model + ".");
     }
 
-    Generation generate(String prompt) {
+    Generation generate(String prompt) { return generate(prompt, SYSTEM_PROMPT, null, 1024); }
+
+    NewsDraft newsDraft(String prompt) {
+        var fields = Map.of(
+                "title", Map.of("type", "string", "minLength", 1, "maxLength", 200),
+                "summary", Map.of("type", "string", "minLength", 1, "maxLength", 1000),
+                "category", Map.of("type", "string", "minLength", 1, "maxLength", 80),
+                "bodyHtml", Map.of("type", "string", "minLength", 1, "maxLength", 20000));
+        var schema = Map.of("type", "object", "properties", fields,
+                "required", List.of("title", "summary", "category", "bodyHtml"), "additionalProperties", false);
+        String instructions = SYSTEM_PROMPT + """
+                Return exactly one JSON object with English keys title, summary, category, bodyHtml.
+                All four values must be written in Persian. Write a short headline, one-sentence summary,
+                a short suitable category, and complete readable article HTML using paragraphs and headings.
+                Use only facts from the user's supplied source. If only a topic is supplied, write general
+                explanatory content without fabricating real news events, names, dates, statistics or quotes.
+                Do not include images, cover, IDs, status, author, markdown fences or any commentary outside JSON.
+                Keep title under 200 characters, summary under 1000, category under 80, bodyHtml under 20000.
+                """;
+        Generation result = generate(prompt, instructions, schema, 3072);
+        if (result.truncated()) throw new AiException(HttpStatus.BAD_GATEWAY,"INCOMPLETE_AI_DRAFT",
+                "The generated article was incomplete. Try a shorter source or request a shorter article.");
+        try {
+            JsonNode json = mapper.readTree(result.text());
+            if (json == null || !json.isObject() || json.size() != 4) throw invalidResponse();
+            String title = draftField(json, "title", 200), summary = draftField(json, "summary", 1000);
+            String category = draftField(json, "category", 80), html = draftField(json, "bodyHtml", 20000);
+            html = org.jsoup.Jsoup.clean(html, "", org.jsoup.safety.Safelist.relaxed().removeTags("img"),
+                    new org.jsoup.nodes.Document.OutputSettings().prettyPrint(false));
+            if (html.length() > 20000 || org.jsoup.Jsoup.parseBodyFragment(html).text().isBlank()) throw invalidResponse();
+            return new NewsDraft(model, title, summary, category, html);
+        } catch (tools.jackson.core.JacksonException exception) { throw invalidResponse(); }
+    }
+
+    private String draftField(JsonNode json, String name, int max) {
+        JsonNode field = json.get(name);
+        if (field == null || !field.isString() || field.asText().isBlank() || field.asText().length() > max)
+            throw invalidResponse();
+        return field.asText().strip();
+    }
+
+    private Generation generate(String prompt, String systemPrompt, Object format, int maxTokens) {
         if (!generationSlot.tryAcquire()) {
             throw new AiException(HttpStatus.TOO_MANY_REQUESTS, "AI_BUSY", "A previous request is still processing.");
         }
         try {
-            String body = mapper.writeValueAsString(Map.of(
-                    "model", model,
-                    "stream", false,
-                    "messages", List.of(Map.of("role", "system", "content", SYSTEM_PROMPT),
-                            Map.of("role", "user", "content", prompt)),
-                    "options", Map.of("temperature", 0.3, "num_predict", 1024, "num_ctx", 8192)));
+            var payload = new java.util.HashMap<String, Object>();
+            payload.put("model", model); payload.put("stream", false);
+            payload.put("messages", List.of(Map.of("role", "system", "content", systemPrompt),
+                    Map.of("role", "user", "content", prompt)));
+            payload.put("options", Map.of("temperature", 0.3, "num_predict", maxTokens, "num_ctx", 8192));
+            if (format != null) payload.put("format", format);
+            String body = mapper.writeValueAsString(payload);
             JsonNode response = exchange(HttpRequest.newBuilder(URI.create(baseUrl + "/api/chat"))
                     .timeout(readTimeout).header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(body)).build());
@@ -126,6 +168,7 @@ class AiTextService {
 
     record Health(String status, String model, boolean modelAvailable) {}
     record Generation(String model, String text, boolean truncated) {}
+    record NewsDraft(String model, String title, String summary, String category, String bodyHtml) {}
 
     static class AiException extends RuntimeException {
         final HttpStatus status;

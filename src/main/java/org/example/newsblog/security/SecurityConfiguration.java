@@ -80,6 +80,7 @@ class SecurityConfiguration {
                         .requestMatchers("/api/admin/ai/**").hasAnyRole("REPORTER", "ADMIN")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/reporter/**").hasAnyRole("REPORTER", "ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/news", "/api/news/**", "/api/images/**").permitAll()
                         .requestMatchers("/api/news", "/api/news/**", "/api/comments/**", "/api/images/**").authenticated()
                         .requestMatchers("/api/users/me", "/api/users/me/**", "/api/auth/logout").authenticated()
                         .anyRequest().denyAll())

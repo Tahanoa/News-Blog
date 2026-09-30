@@ -134,8 +134,10 @@ tokens immediately for subsequent requests. Login does not reveal whether an acc
 missing, disabled, or has a wrong password. No refresh token is issued in this initial version;
 users log in again after expiration. `security.jwt.access-ttl` may be adjusted up to one hour.
 
-The browser keeps the token only in memory, never in localStorage, URLs or cookies. Refreshing
-the page requires login again. API calls use the `Authorization: Bearer <token>` header.
+The browser keeps the short-lived token in sessionStorage for the active tab, and revalidates
+it through `/api/users/me` on reload. It is never placed in cookies or URLs. API calls use the
+`Authorization: Bearer <token>` header. This browser storage is not an HTTP/server session;
+JSESSIONID is not used. Expired or revoked tokens are removed and require a new login.
 Sessions, form login and Basic authentication are disabled. CSRF is disabled because the
 application does not authenticate via cookies; if cookie-based authentication is added later,
 CSRF protection must be reconsidered. CSP forbids inline scripts/styles and user values are
@@ -242,8 +244,10 @@ model quality/speed require testing in the deployment environment.
 
 ## News, comments and images
 
-All content endpoints require `Authorization: Bearer <accessToken>`. Cookies and JSESSIONID
-are not used for authentication. The security context is never saved to an HTTP session.
+Published news, its images and approved comments are public GET endpoints. Drafts/archives
+remain visible only to their reporter or an administrator with a valid JWT. All content writes,
+comment submission and account/panel operations require `Authorization: Bearer <accessToken>`.
+Cookies and JSESSIONID are not used for authentication. The security context is never saved to an HTTP session.
 API messages, source prompts and the initial login/signup UI are English; AI-generated final
 text is explicitly requested in fluent, formal Persian. User-provided Persian content is supported.
 
@@ -277,8 +281,11 @@ curl -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json; chars
 To update, send the same article fields plus its latest `version`. Omitted/null `coverImageId`
 clears the cover. Upload an image first and then use its ID as the cover on the same article.
 HTML supports headings, paragraphs, lists, tables, formatting and safe links. Scripts, event
-handlers, iframes, arbitrary CSS and embedded images are stripped server-side by jsoup.
-Use the dedicated protected image API for article pictures. Comments are plain text: render
+handlers, iframes and arbitrary CSS are stripped server-side by jsoup.
+Inline images reference uploaded images belonging to the same article through
+`<img data-image-id="UUID" alt="Description">`. The server validates ownership and generates
+the internal image content URL. Remote images, arbitrary URLs and Base64/data URIs are not accepted.
+The editor can insert an existing image at the HTML cursor or upload and insert one automatically. Comments are plain text: render
 with `textContent`, never `innerHTML`. Titles, summaries, categories and alt text are plain text too.
 
 ```bash
@@ -291,7 +298,8 @@ are accepted; declared type must match decoded bytes. Uploads are bounded to 5 M
 per dimension and 16 megapixels, and are re-encoded to discard metadata/trailing payloads.
 Maximum 20 images/article. Image responses expose no filesystem paths or client filenames.
 For browser display, fetch image content with the Bearer header and use a Blob URL; do not
-put tokens in image query strings. No public image or news API bypass exists.
+put tokens in image query strings. Images belonging to published news are public; draft and
+archived article images remain protected by article visibility checks.
 
 Comments support one reply level, with an approved top-level parent on the same news item.
 Maximum 100 comments/user/article. Pagination sizes are 1 to 100. Mutations serialize on the
@@ -317,10 +325,11 @@ automatic text direction; the AI helper requests Persian output and can place it
 Use ADMIN bootstrap credentials to create the first manager, then assign REPORTER from the
 admin panel. Only admins publish, archive or return news to draft in the editorial panel.
 
-The browser uses in-app navigation to preserve its in-memory Bearer token; it stores no JWT in
-cookies, localStorage or sessionStorage. Refreshing, opening a separate tab or following a link
-outside the app requires login again. All news content remains protected by the existing JWT APIs.
-Page shells/assets are public so the login screen can load; backend checks protect actual data.
+The browser retains its short-lived Bearer token in sessionStorage across reloads in the same
+tab and validates it with the server on startup. Logout, expiry and revocation clear it. This does
+not create a server session or cookie authentication. Published news, article images and approved
+comments can be read without logging in; comment submission and editing require JWT.
+Page shells/assets are public; backend checks continue to protect private article data.
 Protected image bytes are fetched with the Bearer header and displayed via temporary Blob URLs.
 The client shows approved comments and the current author's pending comments; article editors
 also see the moderation queue. API failures are displayed above the active page.
@@ -328,3 +337,23 @@ also see the moderation queue. API failures are displayed above the active page.
 Image upload/deletion saves the current editor fields first. Review HTML and AI output before
 publishing. The prototype has basic responsive styling and no external framework/CDN dependency.
 No browser or integration tests were run for this UI update.
+
+
+## AI article autofill and inline images
+
+`POST /api/admin/ai/news-draft` accepts `{ "prompt": "Source news text or instructions" }`
+and returns `{ "model": "...", "title": "...", "summary": "...", "category": "...", "bodyHtml": "..." }`.
+Only REPORTER/ADMIN can call it. Ollama receives a JSON schema through `format`; the application
+validates all fields and limits, sanitizes generated HTML and rejects incomplete generation.
+Field keys and instructions are English; all generated field values are requested in Persian.
+The editor's **Fill all news fields with AI** button assigns the four text fields at once. Cover,
+article identity/owner and publication status remain outside AI control. Review and save to persist;
+AI generation does not automatically publish or create real-world facts unsupported by the prompt.
+The existing plain-text generation endpoint remains available through **Generate text only**.
+
+An inline image must already belong to the article. Invalid or cross-article image IDs are rejected.
+Deleting an image removes its inline references and clears its cover reference. Inline images are
+hydrated with the same image endpoint as covers and are not duplicated in the remaining gallery.
+News/comment/image writes and moderation remain JWT-protected despite public published reads.
+Access tokens still expire after the configured duration (15 minutes by default); reload alone no
+longer logs out an account while its token remains valid. No browser/API tests were run for this update.

@@ -24,14 +24,18 @@ public class ContentService {
     private final ImageRepository images;
     private static final int MAX_IMAGE_BYTES = 5 * 1024 * 1024;
     // Embedded images must be attached through the image API, never remote URLs or data URIs.
-    private static final Safelist HTML = Safelist.relaxed().removeTags("img")
+    private static final Safelist HTML = Safelist.relaxed().removeAttributes("img", "src", "width", "height")
+            .addAttributes("img", "data-image-id")
             .addEnforcedAttribute("a", "rel", "nofollow noopener noreferrer");
     ContentService(NewsRepository news, CommentRepository comments, ImageRepository images) {
         this.news=news; this.comments=comments; this.images=images;
     }
-    private UUID actor(Authentication a) { return UUID.fromString(a.getName()); }
-    private boolean admin(Authentication a) { return a.getAuthorities().stream().anyMatch(r -> r.getAuthority().equals("ROLE_ADMIN")); }
-    private boolean reporter(Authentication a) { return a.getAuthorities().stream().anyMatch(r -> r.getAuthority().equals("ROLE_REPORTER")); }
+    private UUID actor(Authentication a) {
+        if (a == null || a instanceof org.springframework.security.authentication.AnonymousAuthenticationToken) return null;
+        return UUID.fromString(a.getName());
+    }
+    private boolean admin(Authentication a) { return a != null && a.getAuthorities().stream().anyMatch(r -> r.getAuthority().equals("ROLE_ADMIN")); }
+    private boolean reporter(Authentication a) { return a != null && a.getAuthorities().stream().anyMatch(r -> r.getAuthority().equals("ROLE_REPORTER")); }
     private boolean editor(News n, Authentication a) { return admin(a) || reporter(a) && n.authorId.equals(actor(a)); }
     private void edit(News n, Authentication a) {
         if (!editor(n,a)) throw error(HttpStatus.FORBIDDEN,"FORBIDDEN","You cannot edit this article.");
@@ -61,7 +65,7 @@ public class ContentService {
             var predicates=new ArrayList<jakarta.persistence.criteria.Predicate>();
             if(!admin(a)) predicates.add(cb.or(cb.equal(r.get("status"),News.Status.PUBLISHED),
                     reporter(a) ? cb.equal(r.get("authorId"),actor(a)) : cb.disjunction()));
-            if(mine) predicates.add(cb.equal(r.get("authorId"),actor(a)));
+            if(mine) predicates.add(actor(a) == null ? cb.disjunction() : cb.equal(r.get("authorId"),actor(a)));
             if(status!=null) predicates.add(cb.equal(r.get("status"),status));
             if(category!=null && !category.isBlank()) predicates.add(cb.equal(r.get("category"),category.strip()));
             if(q!=null && !q.isBlank()) {
@@ -83,6 +87,22 @@ public class ContentService {
     }
     private void apply(News n,String title,String summary,String html,String category,UUID cover) {
         String clean=Jsoup.clean(html,"",HTML,new Document.OutputSettings().prettyPrint(false));
+        var document = Jsoup.parseBodyFragment(clean);
+        document.outputSettings().prettyPrint(false);
+        for (var element : document.select("img")) {
+            UUID imageId;
+            try { imageId = UUID.fromString(element.attr("data-image-id")); }
+            catch (IllegalArgumentException exception) {
+                throw error(HttpStatus.BAD_REQUEST,"INVALID_INLINE_IMAGE","Inline images require an uploaded image ID.");
+            }
+            NewsImage attached = images.findById(imageId).orElseThrow(() -> missing("IMAGE_NOT_FOUND"));
+            if (!attached.newsId.equals(n.id))
+                throw error(HttpStatus.BAD_REQUEST,"INVALID_INLINE_IMAGE","Inline image must belong to this article.");
+            element.attr("data-image-id", imageId.toString());
+            element.attr("src", "/api/images/" + imageId + "/content");
+            element.attr("alt", element.attr("alt").substring(0, Math.min(300, element.attr("alt").length())));
+        }
+        clean = document.body().html();
         if(Jsoup.parseBodyFragment(clean).text().isBlank()) throw error(HttpStatus.BAD_REQUEST,"EMPTY_HTML","Article HTML must contain readable text.");
         if(clean.length()>20000) throw error(HttpStatus.BAD_REQUEST,"HTML_TOO_LONG","Sanitized HTML exceeds 20000 characters.");
         if(cover!=null) {
@@ -114,7 +134,7 @@ public class ContentService {
     public PageView<CommentView> comments(UUID newsId,Authentication a,int page,int size) {
         News n=get(newsId); visible(n,a);
         Specification<NewsComment> spec=(r,q,cb) -> cb.and(cb.equal(r.get("newsId"),newsId),
-                editor(n,a) ? cb.conjunction() : cb.or(cb.equal(r.get("status"),NewsComment.Status.APPROVED),cb.equal(r.get("authorId"),actor(a))));
+                editor(n,a) ? cb.conjunction() : cb.or(cb.equal(r.get("status"),NewsComment.Status.APPROVED),actor(a) == null ? cb.disjunction() : cb.equal(r.get("authorId"),actor(a))));
         return PageView.of(comments.findAll(spec,page(page,size,"createdAt")).map(CommentView::of));
     }
     @Transactional
@@ -206,7 +226,12 @@ public class ContentService {
     @Transactional
     public void deleteImage(UUID id,Authentication a) {
         NewsImage i=images.findById(id).orElseThrow(() -> missing("IMAGE_NOT_FOUND")); News n=locked(i.newsId); edit(n,a);
-        if(id.equals(n.coverImageId)) { n.coverImageId=null; n.updatedAt=Instant.now(); news.flush(); }
+        if(id.equals(n.coverImageId)) n.coverImageId=null;
+        var document = Jsoup.parseBodyFragment(n.bodyHtml);
+        document.outputSettings().prettyPrint(false);
+        for (var element : document.select("img[data-image-id]"))
+            if (id.toString().equals(element.attr("data-image-id"))) element.remove();
+        n.bodyHtml = document.body().html(); n.updatedAt=Instant.now(); news.flush();
         images.delete(i); images.flush();
     }
 }
