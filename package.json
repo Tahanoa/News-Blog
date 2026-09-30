@@ -1,0 +1,7 @@
+{
+  "name": "news-blog-ui",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": { "build:css": "tailwindcss -i ./ui/styles.css -o ./src/main/resources/static/app.css --minify" },
+  "devDependencies": { "@tailwindcss/cli": "4.3.3", "tailwindcss": "4.3.3" }
+}

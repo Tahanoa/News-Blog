@@ -244,7 +244,8 @@ model quality/speed require testing in the deployment environment.
 
 ## News, comments and images
 
-Published news, its images and approved comments are public GET endpoints. Drafts/archives
+Published news and approved comments are public GET endpoints. Image metadata/content URLs are
+public regardless of the attached article status. Draft/archived article text and image listings
 remain visible only to their reporter or an administrator with a valid JWT. All content writes,
 comment submission and account/panel operations require `Authorization: Bearer <accessToken>`.
 Cookies and JSESSIONID are not used for authentication. The security context is never saved to an HTTP session.
@@ -266,8 +267,8 @@ text is explicitly requested in fluent, formal Persian. User-provided Persian co
 | DELETE | `/api/comments/{id}?version=1` | Author or article reporter/ADMIN; comments with replies cannot be deleted |
 | GET | `/api/news/{id}/images` | Paginated image metadata; does not load image bytes into list responses |
 | POST | `/api/news/{id}/images?alt=Library` | Article editor; raw PNG/JPEG binary upload |
-| GET | `/api/images/{id}` | Metadata, dimensions, byte size and protected content URL |
-| GET | `/api/images/{id}/content` | Binary response with image media type and no-store caching |
+| GET | `/api/images/{id}` | Public metadata, dimensions, byte size and public content URL |
+| GET | `/api/images/{id}/content` | Public binary response with image media type and no-store caching |
 | DELETE | `/api/images/{id}` | Article editor; removes image and clears its cover reference |
 
 Create a draft (English JSON source; Persian article values are also supported via UTF-8):
@@ -285,7 +286,7 @@ handlers, iframes and arbitrary CSS are stripped server-side by jsoup.
 Inline images reference uploaded images belonging to the same article through
 `<img data-image-id="UUID" alt="Description">`. The server validates ownership and generates
 the internal image content URL. Remote images, arbitrary URLs and Base64/data URIs are not accepted.
-The editor can insert an existing image at the HTML cursor or upload and insert one automatically. Comments are plain text: render
+The visual editor inserts uploaded or queued images at the text cursor, without requiring HTML knowledge. Comments are plain text: render
 with `textContent`, never `innerHTML`. Titles, summaries, categories and alt text are plain text too.
 
 ```bash
@@ -297,9 +298,10 @@ Images are stored as PostgreSQL BYTEA rather than Base64 (no Base64 expansion). 
 are accepted; declared type must match decoded bytes. Uploads are bounded to 5 MiB, 8000 pixels
 per dimension and 16 megapixels, and are re-encoded to discard metadata/trailing payloads.
 Maximum 20 images/article. Image responses expose no filesystem paths or client filenames.
-For browser display, fetch image content with the Bearer header and use a Blob URL; do not
-put tokens in image query strings. Images belonging to published news are public; draft and
-archived article images remain protected by article visibility checks.
+For browser display, use `/api/images/{id}/content` directly as the image source, without JWT
+headers or token query strings. All uploaded image URLs are public, including images attached
+to drafts and archived stories. Article text, private image listings and image writes retain
+their ownership/role checks. Upload and deletion still require JWT.
 
 Comments support one reply level, with an approved top-level parent on the same news item.
 Maximum 100 comments/user/article. Pagination sizes are 1 to 100. Mutations serialize on the
@@ -310,15 +312,15 @@ JWT-authenticated identity; client-supplied authors, roles and publication field
 This content update has not been tested against a running application or PostgreSQL database.
 
 
-## Initial browser pages
+## Browser pages
 
 | URL | Page |
 |---|---|
 | `/` or `/news` | Published news with search, category filter and pagination |
-| `/news/{uuid}` | Article HTML, protected images, comment submission/replies, author editing and permitted moderation |
+| `/news/{uuid}` | Formatted article, public images, comment submission/replies, author editing and permitted moderation |
 | `/reporter` | Own drafts for reporters; all articles for admins; editor, image upload/delete/cover and Persian AI helper |
 | `/admin` | Paginated accounts, role/enabled controls and link to editorial publication controls |
-| `/login`, `/register` | Minimal account forms |
+| `/login`, `/register` | Responsive account forms with a shared editorial theme |
 
 UI labels and source instructions are English. Persian article/comment text is rendered with
 automatic text direction; the AI helper requests Persian output and can place it into the editor.
@@ -330,12 +332,15 @@ tab and validates it with the server on startup. Logout, expiry and revocation c
 not create a server session or cookie authentication. Published news, article images and approved
 comments can be read without logging in; comment submission and editing require JWT.
 Page shells/assets are public; backend checks continue to protect private article data.
-Protected image bytes are fetched with the Bearer header and displayed via temporary Blob URLs.
+Public image URLs load directly in normal image elements. Unsaved image previews use temporary Blob URLs.
 The client shows approved comments and the current author's pending comments; article editors
 also see the moderation queue. API failures are displayed above the active page.
 
-Image upload/deletion saves the current editor fields first. Review HTML and AI output before
-publishing. The prototype has basic responsive styling and no external framework/CDN dependency.
+The visual editor queues local images and uploads them when the article is saved. A new draft
+is created before its images are attached, then the final article body and cover are saved. If
+an upload fails, the editor retains pending changes; successful uploads are not repeated on retry.
+Existing-image deletion saves current edits first and removes cover/body references server-side.
+Review AI output before publishing. No knowledge of HTML is needed.
 No browser or integration tests were run for this UI update.
 
 
@@ -346,7 +351,7 @@ and returns `{ "model": "...", "title": "...", "summary": "...", "category": "..
 Only REPORTER/ADMIN can call it. Ollama receives a JSON schema through `format`; the application
 validates all fields and limits, sanitizes generated HTML and rejects incomplete generation.
 Field keys and instructions are English; all generated field values are requested in Persian.
-The editor's **Fill all news fields with AI** button assigns the four text fields at once. Cover,
+The editor's **Generate complete story** button assigns the four text fields at once. Cover,
 article identity/owner and publication status remain outside AI control. Review and save to persist;
 AI generation does not automatically publish or create real-world facts unsupported by the prompt.
 The existing plain-text generation endpoint remains available through **Generate text only**.
@@ -357,3 +362,38 @@ hydrated with the same image endpoint as covers and are not duplicated in the re
 News/comment/image writes and moderation remain JWT-protected despite public published reads.
 Access tokens still expire after the configured duration (15 minutes by default); reload alone no
 longer logs out an account while its token remains valid. No browser/API tests were run for this update.
+
+
+## Editorial theme and visual writing studio
+
+The public publication, reading page, account pages, editorial desk and people/access panel
+share a responsive Tailwind theme: warm paper, deep green, lime accents, featured stories,
+category navigation, news cards and compact workspace navigation. Persian content uses automatic
+text direction while interface labels and source instructions remain English.
+
+The article studio offers paragraphs, H2/H3 headings, bold/italic/underline, ordered and unordered
+lists, quotes, links, undo/redo and reading preview. Paste inserts plain text (or supported image
+files), avoiding pasted styling and remote HTML. Drag PNG/JPEG files into the story to place them
+at the drop location; drag them into the media panel to queue them without inline insertion.
+Select files with Add images, drag library images into the body, or use Insert into story.
+Images already inside the story can be dragged to another position. A separate chooser sets
+the cover. Queued images support editable descriptions. Existing limits remain 20 images per
+story and 5 MiB per PNG/JPEG. Server-side decoding and HTML sanitization remain in force.
+
+Unsaved edits show a status indicator and warn before navigation/reload. Saving blocks editor
+changes until the request sequence finishes. Draft text is not automatically persisted; save it
+before leaving. Login continues to survive a same-tab reload until JWT expiry/revocation.
+
+Tailwind CSS is compiled and committed as `src/main/resources/static/app.css`; no CDN or
+frontend Node process is needed to run Spring Boot. To rebuild after changing HTML, JavaScript
+classes or `ui/styles.css`:
+
+```bash
+npm ci
+npm run build:css
+```
+
+Tailwind build packages are pinned in package-lock.json. This redesign changes no database
+technology: PostgreSQL remains the only supported database. Images remain stored as BYTEA.
+No automated, browser or database tests were run for the redesign; only CSS build, JavaScript
+syntax validation and Java compilation were performed.

@@ -3,28 +3,28 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>News Blog</title>
+  <meta name="theme-color" content="#172b26">
+  <meta name="description" content="News Blog — a fresh perspective on the stories that matter.">
+  <title>News Blog — A fresh perspective</title>
   <link rel="stylesheet" href="/app.css">
   <script src="/app.js" defer></script>
 </head>
 <body>
-<header>
-  <a href="/" data-route class="brand">News Blog</a>
-  <nav aria-label="Main navigation">
-    <a href="/" data-route>News</a>
-    <a href="/reporter" data-route id="reporter-link" hidden>Reporter panel</a>
-    <a href="/admin" data-route id="admin-link" hidden>Admin panel</a>
-    <a href="/login" data-route id="login-link">Log in</a>
-    <a href="/register" data-route id="register-link">Sign up</a>
-    <button type="button" id="logout" hidden>Log out</button>
+<div class="topline"><span>INDEPENDENT STORIES. FRESH PERSPECTIVES.</span><span id="today"></span></div>
+<header class="site-header">
+  <a href="/" data-route class="brand" aria-label="News Blog home"><span class="brand-mark">n.</span><span>News<span class="brand-light">Blog</span><small>A FRESH PERSPECTIVE</small></span></a>
+  <nav aria-label="Main navigation" class="main-nav">
+    <a href="/" data-route class="nav-link">Discover</a>
+    <a href="/reporter" data-route id="reporter-link" class="nav-link" hidden>Newsroom</a>
+    <a href="/admin" data-route id="admin-link" class="nav-link" hidden>Administration</a>
   </nav>
-  <p id="identity"></p>
+  <div class="account-nav"><span id="identity" class="identity"></span><a href="/login" data-route id="login-link">Log in</a><a href="/register" data-route id="register-link" class="nav-cta">Join the conversation ↗</a><button type="button" id="logout" hidden>Log out</button></div>
 </header>
-<main>
+<main id="main">
   <p id="message" role="status" aria-live="polite" hidden></p>
-  <section id="page" aria-live="polite"><p>Loading...</p></section>
-  <noscript>Enable JavaScript to use the news and account pages.</noscript>
+  <section id="page" aria-live="polite"><div class="loading">Opening a fresh perspective…</div></section>
+  <noscript>Enable JavaScript to browse news and use your account.</noscript>
 </main>
-<footer>Published news is public. Account actions use Bearer JWT authentication.</footer>
+<footer class="site-footer"><div><a href="/" data-route class="footer-brand">NewsBlog<span>®</span></a><p>Stories worth your time.<br>Perspectives worth sharing.</p></div><div class="footer-links"><a href="/" data-route>Discover the latest</a><a href="/login" data-route>Your account</a><span>Thoughtfully built. Independently told.</span></div><div class="footer-bottom"><span>© <span id="year"></span> News Blog</span><span>READ. THINK. DISCUSS.</span></div></footer>
 </body>
 </html>

@@ -216,7 +216,8 @@ public class ContentService {
         }
     }
     private NewsImage image(UUID id,Authentication a) {
-        NewsImage i=images.findById(id).orElseThrow(() -> missing("IMAGE_NOT_FOUND")); visible(get(i.newsId),a); return i;
+        // Image URLs are intentionally public, including images attached to private drafts.
+        return images.findById(id).orElseThrow(() -> missing("IMAGE_NOT_FOUND"));
     }
     @Transactional(readOnly=true)
     public ImageView imageInfo(UUID id,Authentication a) { return ImageView.of(image(id,a)); }
