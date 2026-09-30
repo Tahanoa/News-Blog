@@ -3,8 +3,6 @@
 <p align="center"><strong>Read. Write. Share a fresh perspective.</strong></p>
 <p align="center">A modern news platform with a visual writing studio and local AI.</p>
 
-![News Blog project overview](docs/assets/news-blog-infographic.webp)
-
 ## ✨ What you can do
 
 - **Discover stories** — public news, category filters, search and article discussions.
