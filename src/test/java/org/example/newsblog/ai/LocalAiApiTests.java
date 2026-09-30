@@ -77,7 +77,7 @@ class LocalAiApiTests {
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("ai.ollama.base-url", () -> "http://127.0.0.1:" + OLLAMA.getAddress().getPort());
         registry.add("ai.ollama.read-timeout", () -> "500ms");
-        registry.add("spring.datasource.url", () -> "jdbc:h2:mem:ai-tests;DB_CLOSE_DELAY=-1");
+        registry.add("spring.datasource.url", () -> "jdbc:h2:mem:ai-tests;MODE=PostgreSQL;DB_CLOSE_DELAY=-1");
     }
 
     @BeforeEach
@@ -85,7 +85,7 @@ class LocalAiApiTests {
         STATUS.set(200);
         CALLS.set(0);
         DELAY_MS.set(0);
-        BODY.set("{\"message\":{\"content\":\"متن نهایی\",\"thinking\":\"private analysis\"},\"done\":true,\"done_reason\":\"stop\"}");
+        BODY.set("{\"message\":{\"content\":\"Final text\",\"thinking\":\"private analysis\"},\"done\":true,\"done_reason\":\"stop\"}");
         AppUser admin = users.findByUsername("ai-admin").orElseGet(() -> users.saveAndFlush(
                 new AppUser("ai-admin", "ai-admin@example.com", passwords.encode("test-password-123"), Role.ADMIN)));
         token = tokens.issue(admin).accessToken();
@@ -123,11 +123,11 @@ class LocalAiApiTests {
 
     @Test
     void sendsOneCompleteRequestAndReturnsFinalContentOnly() throws Exception {
-        String prompt = "برای خبر کتابخانه، تیتر و خلاصه بنویس.";
+        String prompt = "Write a Persian headline and summary for the library news.";
         var response = request("generate", mapper.writeValueAsString(Map.of("prompt", prompt)), true);
         assertEquals(200, response.statusCode());
         var result = mapper.readTree(response.body());
-        assertEquals("متن نهایی", result.path("text").asText());
+        assertEquals("Final text", result.path("text").asText());
         assertFalse(result.path("truncated").asBoolean());
         assertFalse(response.body().contains("private analysis"));
         var sent = mapper.readTree(LAST_REQUEST.get());
@@ -162,7 +162,7 @@ class LocalAiApiTests {
 
     @Test
     void flagsOutputThatReachedTheTokenLimit() throws Exception {
-        BODY.set("{\"message\":{\"content\":\"متن\"},\"done\":true,\"done_reason\":\"length\"}");
+        BODY.set("{\"message\":{\"content\":\"Text\"},\"done\":true,\"done_reason\":\"length\"}");
         assertTrue(mapper.readTree(request("generate", "{\"prompt\":\"hello\"}", true).body())
                 .path("truncated").asBoolean());
     }

@@ -24,9 +24,24 @@ final class ApiRequestGuard extends OncePerRequestFilter {
             SecurityResponses.error(response, 429, "RATE_LIMITED");
             return;
         }
-        if (path.startsWith("/api/") && (request.getMethod().equals("POST") || request.getMethod().equals("PATCH"))) {
-            byte[] bytes = request.getInputStream().readNBytes(32769);
-            if (bytes.length > 32768) {
+        boolean contentWrite = (path.startsWith("/api/news") || path.startsWith("/api/comments/")
+                || path.startsWith("/api/images/")) && !request.getMethod().equals("GET");
+        if (contentWrite && !allowWindow(request.getRemoteAddr() + ":content", 60, 60000L)) {
+            response.setHeader("Retry-After", "60");
+            SecurityResponses.error(response, 429, "RATE_LIMITED");
+            return;
+        }
+        if (path.startsWith("/api/") && (request.getMethod().equals("POST") || request.getMethod().equals("PATCH") || request.getMethod().equals("PUT"))) {
+            boolean imageUpload = request.getMethod().equals("POST")
+                    && path.matches("/api/news/[0-9a-fA-F-]{36}/images");
+            int maxBytes = imageUpload ? 5 * 1024 * 1024
+                    : path.equals("/api/news") || path.matches("/api/news/[0-9a-fA-F-]{36}") ? 128 * 1024 : 32768;
+            if (request.getContentLengthLong() > maxBytes) {
+                SecurityResponses.error(response, 413, "BODY_TOO_LARGE");
+                return;
+            }
+            byte[] bytes = request.getInputStream().readNBytes(maxBytes + 1);
+            if (bytes.length > maxBytes) {
                 SecurityResponses.error(response, 413, "BODY_TOO_LARGE");
                 return;
             }
@@ -49,15 +64,17 @@ final class ApiRequestGuard extends OncePerRequestFilter {
         } else chain.doFilter(request, response);
     }
 
-    private synchronized boolean allow(String key, boolean register) {
+    private boolean allow(String key, boolean register) {
+        return allowWindow(key, register ? 10 : 20, register ? 3600000L : 600000L);
+    }
+    private synchronized boolean allowWindow(String key, int max, long duration) {
         long now = System.currentTimeMillis();
         windows.entrySet().removeIf(entry -> entry.getValue().expiresAt() <= now);
         Window window = windows.get(key);
         if (window == null) {
             if (windows.size() >= 5000) return false;
-            window = new Window(now + (register ? 3600000L : 600000L), 0);
+            window = new Window(now + duration, 0);
         }
-        int max = register ? 10 : 20;
         if (window.attempts() >= max) return false;
         windows.put(key, new Window(window.expiresAt(), window.attempts() + 1));
         return true;

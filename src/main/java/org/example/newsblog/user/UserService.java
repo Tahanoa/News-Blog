@@ -32,7 +32,7 @@ public class UserService {
         username = normalize(username);
         email = normalize(email);
         if (users.existsByUsernameOrEmail(username, email)) {
-            throw new ApiException(HttpStatus.CONFLICT, "USER_EXISTS", "نام کاربری یا ایمیل قبلاً ثبت شده است.");
+            throw new ApiException(HttpStatus.CONFLICT, "USER_EXISTS", "Username or email is already registered.");
         }
         return users.saveAndFlush(new AppUser(username, email, passwords.encode(password), Role.USER));
     }
@@ -44,7 +44,7 @@ public class UserService {
         boolean matches = passwords.matches(validLength ? password : "invalid-password-length",
                 user == null ? dummyHash : user.getPasswordHash());
         if (!validLength || !matches || user == null || !user.isEnabled()) {
-            throw new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "اطلاعات ورود معتبر نیست.");
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "Invalid credentials.");
         }
         return user;
     }
@@ -55,7 +55,7 @@ public class UserService {
     @Transactional(readOnly = true)
     public Page<UserView> list(int page, int size) {
         if (page < 0 || size < 1 || size > 100) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "اندازه صفحه باید بین ۱ و ۱۰۰ باشد.");
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Page size must be between 1 and 100.");
         }
         return users.findAll(PageRequest.of(page, size, Sort.by("createdAt").descending())).map(UserView::of);
     }
@@ -66,7 +66,7 @@ public class UserService {
         AppUser user = users.findForUpdate(id).orElseThrow(this::notFound);
         if (user.getRole() == Role.ADMIN && user.isEnabled() && (role != Role.ADMIN || !enabled)
                 && users.countByRoleAndEnabledTrue(Role.ADMIN) <= 1) {
-            throw new ApiException(HttpStatus.CONFLICT, "LAST_ADMIN", "آخرین مدیر فعال را نمی‌توان غیرفعال یا تنزل داد.");
+            throw new ApiException(HttpStatus.CONFLICT, "LAST_ADMIN", "The last enabled administrator cannot be disabled or demoted.");
         }
         user.updateAccess(role, enabled);
         return UserView.of(user);
@@ -81,7 +81,7 @@ public class UserService {
         AppUser user = users.findForUpdate(id).orElseThrow(this::notFound);
         if (currentPassword.getBytes(StandardCharsets.UTF_8).length > 72
                 || !passwords.matches(currentPassword, user.getPasswordHash())) {
-            throw new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "اطلاعات ورود معتبر نیست.");
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "Invalid credentials.");
         }
         user.changePassword(passwords.encode(newPassword));
     }
@@ -103,13 +103,13 @@ public class UserService {
 
     private AppUser require(UUID id) { return users.findById(id).orElseThrow(this::notFound); }
     private ApiException notFound() {
-        return new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "کاربر پیدا نشد.");
+        return new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "User not found.");
     }
     public static void validatePassword(String password) {
         if (password == null || password.length() < 12 || password.isBlank()
                 || password.getBytes(StandardCharsets.UTF_8).length > 72) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PASSWORD",
-                    "رمز باید حداقل ۱۲ نویسه و حداکثر ۷۲ بایت UTF-8 داشته باشد.");
+                    "Password must contain at least 12 characters and at most 72 UTF-8 bytes.");
         }
     }
     private static String normalize(String value) { return value.strip().toLowerCase(Locale.ROOT); }

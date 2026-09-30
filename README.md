@@ -1,7 +1,7 @@
 # News-Blog
 
 Spring Boot 4.1.1 / Java 17+ news-project foundation with persistent users, JWT authentication,
-role authorization and local Ollama text generation. A minimal Persian login/signup page is
+role authorization and local Ollama text generation. A minimal English login/signup page is
 available at `/`, `/login`, and `/register`.
 
 ## Run locally — Git Bash
@@ -84,15 +84,14 @@ no permissive CORS configuration is enabled. Do not expose the local profile pub
 
 | Role | Permissions currently implemented |
 |---|---|
-| `USER` — کاربر | Own profile, password change and logout |
-| `REPORTER` — خبرنگار | USER permissions plus AI APIs and `/api/reporter/**` |
-| `ADMIN` — مدیر | All above, paginated user list, role and enabled-state changes |
+| `USER` — User | Own profile, password change and logout |
+| `REPORTER` — Reporter | USER permissions plus AI APIs and `/api/reporter/**` |
+| `ADMIN` — Administrator | All above, paginated user list, role and enabled-state changes |
 
 Public signup always creates an enabled USER. A client cannot submit `role`, `enabled`,
 `id`, or password hashes in signup JSON. Unknown JSON fields are rejected. Roles are checked
 against the current database user on every authenticated request, not trusted from client claims.
-The last enabled ADMIN cannot be disabled or demoted. There are no news/article endpoints yet;
-new routes are denied until explicit authorization rules are added.
+The last enabled ADMIN cannot be disabled or demoted. News, comment and image endpoints are described below. Unknown routes remain denied.
 
 ## API contract
 
@@ -194,7 +193,7 @@ alter the text. PowerShell can send explicit UTF-8 bytes:
 
 ```powershell
 $headers = @{ Authorization = 'Bearer YOUR_ACCESS_TOKEN' }
-$json = @{ prompt = 'فقط دو جمله کوتاه فارسی درباره اهمیت مطالعه بنویس.' } | ConvertTo-Json -Compress
+$json = @{ prompt = 'Write exactly two short sentences in Persian about the importance of reading. Return only the final text.' } | ConvertTo-Json -Compress
 Invoke-RestMethod -Method Post -Uri 'http://localhost:8081/api/admin/ai/generate' `
   -Headers $headers -ContentType 'application/json; charset=utf-8' `
   -Body ([Text.Encoding]::UTF8.GetBytes($json)) -TimeoutSec 200
@@ -202,7 +201,8 @@ Invoke-RestMethod -Method Post -Uri 'http://localhost:8081/api/admin/ai/generate
 
 ## Limits and errors
 
-JSON POST/PATCH bodies are limited to 32 KiB. Signup is limited to 10 attempts/hour/IP;
+JSON POST/PUT/PATCH bodies are limited to 32 KiB, except article create/update bodies (128 KiB).
+Raw image uploads are limited to 5 MiB. Content writes are limited to 60 requests/minute/IP. Signup is limited to 10 attempts/hour/IP;
 login to 20 attempts/10 minutes/IP. The limiter is bounded to 5000 active IP/route windows,
 uses the actual connection IP and is in-memory for a single application instance. For a
 multi-instance deployment, move throttling to a shared store/gateway and explicitly configure
@@ -234,3 +234,66 @@ privilege injection, disabled users, logout/password/access-change revocation, e
 tokens, issuer/audience/required claims, strong-key configuration, last-admin protection,
 request limits, static pages/CSP and AI behavior. Live PostgreSQL connectivity and actual
 model quality/speed require testing in the deployment environment.
+
+
+## News, comments and images
+
+All content endpoints require `Authorization: Bearer <accessToken>`. Cookies and JSESSIONID
+are not used for authentication. The security context is never saved to an HTTP session.
+API messages, source prompts and the initial login/signup UI are English; AI-generated final
+text is explicitly requested in fluent, formal Persian. User-provided Persian content is supported.
+
+| Method | Endpoint | Access / behavior |
+|---|---|---|
+| GET | `/api/news?page=0&size=20&q=library&category=Local&status=PUBLISHED&mine=false` | Paginated search; USER sees published news, REPORTER also sees own drafts/archives, ADMIN sees all |
+| GET | `/api/news/{id}` | Same visibility, includes sanitized `bodyHtml` |
+| POST | `/api/news` | REPORTER/ADMIN, creates an owned DRAFT |
+| PUT | `/api/news/{id}` | Reporter edits own DRAFT; ADMIN edits any article; requires current `version` |
+| PATCH | `/api/news/{id}/status` | ADMIN only; `{ "version": 0, "status": "PUBLISHED" }` (DRAFT/PUBLISHED/ARCHIVED) |
+| DELETE | `/api/news/{id}?version=1` | ADMIN only; archives rather than destroying associated content |
+| GET | `/api/news/{id}/comments` | Paginated; readers see approved comments plus their own; article reporter/ADMIN see moderation queue too |
+| POST | `/api/news/{id}/comments` | Any authenticated user on published news; `{ "body": "Comment", "parentId": null }`; starts PENDING |
+| PUT | `/api/comments/{id}` | Author only; `{ "version": 0, "body": "Updated comment" }`; resets to PENDING |
+| PATCH | `/api/comments/{id}/moderation` | Article reporter/ADMIN; `{ "version": 0, "status": "APPROVED" }` (PENDING/APPROVED/REJECTED) |
+| DELETE | `/api/comments/{id}?version=1` | Author or article reporter/ADMIN; comments with replies cannot be deleted |
+| GET | `/api/news/{id}/images` | Paginated image metadata; does not load image bytes into list responses |
+| POST | `/api/news/{id}/images?alt=Library` | Article editor; raw PNG/JPEG binary upload |
+| GET | `/api/images/{id}` | Metadata, dimensions, byte size and protected content URL |
+| GET | `/api/images/{id}/content` | Binary response with image media type and no-store caching |
+| DELETE | `/api/images/{id}` | Article editor; removes image and clears its cover reference |
+
+Create a draft (English JSON source; Persian article values are also supported via UTF-8):
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json; charset=utf-8' \
+  --data-binary '{"title":"Library opening hours","summary":"The library extends opening hours.","bodyHtml":"<h2>Details</h2><p>The library will stay open until eight.</p>","category":"Local","coverImageId":null}' \
+  http://localhost:8081/api/news
+```
+
+To update, send the same article fields plus its latest `version`. Omitted/null `coverImageId`
+clears the cover. Upload an image first and then use its ID as the cover on the same article.
+HTML supports headings, paragraphs, lists, tables, formatting and safe links. Scripts, event
+handlers, iframes, arbitrary CSS and embedded images are stripped server-side by jsoup.
+Use the dedicated protected image API for article pictures. Comments are plain text: render
+with `textContent`, never `innerHTML`. Titles, summaries, categories and alt text are plain text too.
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" -H 'Content-Type: image/png' \
+  --data-binary @photo.png "http://localhost:8081/api/news/$NEWS_ID/images?alt=Library"
+```
+
+Images are stored as PostgreSQL BYTEA rather than Base64 (no Base64 expansion). Only PNG/JPEG
+are accepted; declared type must match decoded bytes. Uploads are bounded to 5 MiB, 8000 pixels
+per dimension and 16 megapixels, and are re-encoded to discard metadata/trailing payloads.
+Maximum 20 images/article. Image responses expose no filesystem paths or client filenames.
+For browser display, fetch image content with the Bearer header and use a Blob URL; do not
+put tokens in image query strings. No public image or news API bypass exists.
+
+Comments support one reply level, with an approved top-level parent on the same news item.
+Maximum 100 comments/user/article. Pagination sizes are 1 to 100. Mutations serialize on the
+article; news/comments also use optimistic versions to return 409 for stale updates. Flyway
+`V2__news_comments_images.sql` creates tables, foreign keys and indexes without deleting
+existing users. News ownership and comment moderation are checked in the service against
+JWT-authenticated identity; client-supplied authors, roles and publication fields are rejected.
+
+This content update has not been tested against a running application or PostgreSQL database.

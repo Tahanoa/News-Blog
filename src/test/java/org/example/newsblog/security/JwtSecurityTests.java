@@ -37,7 +37,7 @@ class JwtSecurityTests {
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", () -> "jdbc:h2:mem:jwt-tests;DB_CLOSE_DELAY=-1");
+        registry.add("spring.datasource.url", () -> "jdbc:h2:mem:jwt-tests;MODE=PostgreSQL;DB_CLOSE_DELAY=-1");
         registry.add("ai.ollama.base-url", () -> "http://127.0.0.1:1");
     }
 
@@ -96,7 +96,7 @@ class JwtSecurityTests {
                 Map.of("username", "reader", "email", "reader@example.com", "password", "short"),
                 Map.of("username", "reader", "email", "bad", "password", PASSWORD),
                 Map.of("username", "<script>", "email", "reader@example.com", "password", PASSWORD),
-                Map.of("username", "reader", "email", "reader@example.com", "password", "آ".repeat(40)))) {
+                Map.of("username", "reader", "email", "reader@example.com", "password", "\u0622".repeat(40)))) {
             assertEquals(400, call("POST", "/api/auth/register", body, null).statusCode());
         }
         user("duplicate", Role.USER);

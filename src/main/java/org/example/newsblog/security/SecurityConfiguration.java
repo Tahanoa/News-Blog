@@ -68,6 +68,10 @@ class SecurityConfiguration {
         return http
                 .csrf(csrf -> csrf.disable()) // Only Authorization Bearer tokens; no cookie/session authentication.
                 .logout(logout -> logout.disable())
+                .httpBasic(basic -> basic.disable())
+                .formLogin(form -> form.disable())
+                .securityContext(context -> context.securityContextRepository(
+                        new org.springframework.security.web.context.NullSecurityContextRepository()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .requestCache(cache -> cache.disable())
                 .authorizeHttpRequests(auth -> auth
@@ -76,6 +80,7 @@ class SecurityConfiguration {
                         .requestMatchers("/api/admin/ai/**").hasAnyRole("REPORTER", "ADMIN")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/reporter/**").hasAnyRole("REPORTER", "ADMIN")
+                        .requestMatchers("/api/news", "/api/news/**", "/api/comments/**", "/api/images/**").authenticated()
                         .requestMatchers("/api/users/me", "/api/users/me/**", "/api/auth/logout").authenticated()
                         .anyRequest().denyAll())
                 .oauth2ResourceServer(oauth -> oauth.jwt(jwt -> jwt.jwtAuthenticationConverter(authentication))

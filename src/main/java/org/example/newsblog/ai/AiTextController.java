@@ -38,6 +38,6 @@ class AiTextController {
     @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class})
     ResponseEntity<ApiError> invalidInput() {
         return ResponseEntity.badRequest().body(new ApiError("INVALID_INPUT",
-                "بدنه JSON باید شامل prompt غیرخالی با حداکثر ۱۲۰۰۰ نویسه باشد."));
+                "JSON must contain a nonblank prompt of at most 12000 characters."));
     }
 }

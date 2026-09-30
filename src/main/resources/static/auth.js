@@ -4,25 +4,25 @@
     let registering = location.pathname === '/register';
     let token = null; // In memory only: never stored in localStorage, URLs or cookies.
     let expiryTimer = null;
-    const roles = { USER: 'کاربر', REPORTER: 'خبرنگار', ADMIN: 'مدیر' };
+    const roles = { USER: 'User', REPORTER: 'Reporter', ADMIN: 'Administrator' };
     const errors = {
-        INVALID_CREDENTIALS: 'نام کاربری یا رمز عبور معتبر نیست یا حساب غیرفعال است.',
-        USER_EXISTS: 'نام کاربری یا ایمیل قبلاً ثبت شده است.',
-        INVALID_INPUT: 'اطلاعات را بررسی کنید. نام کاربری انگلیسی، ایمیل معتبر و رمز حداقل ۱۲ نویسه لازم است.',
-        INVALID_PASSWORD: 'رمز باید حداقل ۱۲ نویسه و حداکثر ۷۲ بایت UTF-8 داشته باشد.',
-        RATE_LIMITED: 'تعداد تلاش‌ها زیاد است؛ بعداً دوباره امتحان کنید.',
-        UNAUTHORIZED: 'نشست شما معتبر نیست. دوباره وارد شوید.'
+        INVALID_CREDENTIALS: 'Invalid username or password, or the account is disabled.',
+        USER_EXISTS: 'Username or email is already registered.',
+        INVALID_INPUT: 'Use an ASCII username, valid email and a password of at least 12 characters.',
+        INVALID_PASSWORD: 'Password must contain at least 12 characters and at most 72 UTF-8 bytes.',
+        RATE_LIMITED: 'Too many attempts. Try again later.',
+        UNAUTHORIZED: 'Your token is invalid. Log in again.'
     };
     function mode(value) {
         registering = value;
-        byId('title').textContent = value ? 'ساخت حساب جدید' : 'ورود به حساب';
-        byId('intro').textContent = value ? 'حساب جدید با نقش کاربر ساخته می‌شود.' : 'برای دسترسی به حساب خود وارد شوید.';
+        byId('title').textContent = value ? 'Create an account' : 'Log in';
+        byId('intro').textContent = value ? 'New accounts receive the USER role.' : 'Log in to access your account.';
         byId('email-field').hidden = !value;
         byId('email').required = value;
         byId('password-help').hidden = !value;
         byId('password').minLength = value ? 12 : 1;
         byId('password').autocomplete = value ? 'new-password' : 'current-password';
-        byId('submit').textContent = value ? 'ثبت‌نام' : 'ورود';
+        byId('submit').textContent = value ? 'Sign up' : 'Log in';
         byId('login-tab').setAttribute('aria-pressed', String(!value));
         byId('register-tab').setAttribute('aria-pressed', String(value));
         byId('message').textContent = '';
@@ -46,7 +46,7 @@
         const result = response.status === 204 ? null : await response.json();
         if (!response.ok) {
             if (response.status === 401 && token) clearSession();
-            throw new Error(errors[result?.code] || 'درخواست انجام نشد. دوباره تلاش کنید.');
+            throw new Error(errors[result?.code] || 'Request failed. Try again.');
         }
         return result;
     }
@@ -63,7 +63,7 @@
                 await api('/api/auth/register', 'POST', body);
                 byId('password').value = '';
                 mode(false);
-                byId('message').textContent = 'حساب ساخته شد. اکنون وارد شوید.';
+                byId('message').textContent = 'Account created. You can now log in.';
             } else {
                 const result = await api('/api/auth/login', 'POST', body);
                 token = result.accessToken;
@@ -72,19 +72,19 @@
                 byId('account-username').textContent = user.username;
                 byId('account-email').textContent = user.email;
                 byId('account-role').textContent = roles[user.role] || user.role;
-                byId('account-enabled').textContent = user.enabled ? 'فعال' : 'غیرفعال';
+                byId('account-enabled').textContent = user.enabled ? 'Enabled' : 'Disabled';
                 byId('auth-form').hidden = true;
                 byId('tabs').hidden = true;
                 byId('account').hidden = false;
-                byId('title').textContent = 'ورود موفق';
-                byId('intro').textContent = 'حساب شما آماده است.';
+                byId('title').textContent = 'Login successful';
+                byId('intro').textContent = 'Your account is ready.';
                 expiryTimer = setTimeout(() => {
                     clearSession();
-                    byId('message').textContent = 'نشست پایان یافت. دوباره وارد شوید.';
+                    byId('message').textContent = 'Your token expired. Log in again.';
                 }, result.expiresIn * 1000);
             }
         } catch (error) {
-            byId('message').textContent = error instanceof TypeError ? 'ارتباط با سرور برقرار نشد.' : error.message;
+            byId('message').textContent = error instanceof TypeError ? 'Cannot connect to the server.' : error.message;
         } finally { byId('submit').disabled = false; }
     });
     byId('logout').addEventListener('click', async () => {
@@ -92,7 +92,7 @@
         try {
             await api('/api/auth/logout', 'POST');
             clearSession();
-            byId('message').textContent = 'از همه نشست‌ها خارج شدید.';
+            byId('message').textContent = 'All access tokens have been revoked.';
         } catch (error) { byId('message').textContent = error.message; }
         finally { byId('logout').disabled = false; }
     });

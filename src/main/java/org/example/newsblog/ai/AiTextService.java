@@ -20,13 +20,13 @@ import tools.jackson.databind.json.JsonMapper;
 @Service
 class AiTextService {
     private static final String SYSTEM_PROMPT = """
-            تو دستیار تولید متن و ویراستار فارسی هستی. درخواست کاربر را انجام بده.
-            فقط پاسخ نهایی را با فارسی روان و رسمی بنویس.
-            تحلیل، روند فکر کردن و توضیح اضافه ننویس. قالب خواسته‌شده را رعایت کن.
-            اگر کاربر درباره یک موضوع متن جدید می‌خواهد، همان متن را تولید کن؛ متن خبر یا متن اولیه لازم نیست.
-            اگر کاربر بازنویسی، خلاصه یا تیتر برای متن ارائه‌شده می‌خواهد، فقط از همان متن استفاده کن.
-            در بازنویسی و خلاصه، نام‌ها، اعداد و زمان وقوع را دقیق حفظ کن و اطلاعات تازه اضافه نکن.
-            در تولید متن جدید، آمار، نقل‌قول یا رویداد واقعی بدون منبع نساز.
+            You are a Persian text generation assistant and news editor. Follow the user's request.
+            Always write the final output in fluent, formal Persian (Farsi), even if the instructions are English.
+            Return only the final answer, without analysis, thinking, or extra explanations. Follow the requested format.
+            When asked to generate text about a topic, generate it; a source article is not required.
+            When asked to rewrite, summarize, or create a headline from supplied text, use only that text.
+            Preserve names, numbers, and event dates exactly in rewrites and summaries. Do not add new facts.
+            Do not invent real statistics, quotations, or events without a source when generating new text.
             """;
     private final HttpClient client;
     private final JsonMapper mapper = JsonMapper.builder().build();
@@ -61,12 +61,12 @@ class AiTextService {
             }
         }
         throw new AiException(HttpStatus.SERVICE_UNAVAILABLE, "MODEL_NOT_FOUND",
-                "مدل نصب نیست. دستور ollama pull " + model + " را اجرا کنید.");
+                "Model is not installed. Run ollama pull " + model + ".");
     }
 
     Generation generate(String prompt) {
         if (!generationSlot.tryAcquire()) {
-            throw new AiException(HttpStatus.TOO_MANY_REQUESTS, "AI_BUSY", "درخواست قبلی هنوز در حال پردازش است.");
+            throw new AiException(HttpStatus.TOO_MANY_REQUESTS, "AI_BUSY", "A previous request is still processing.");
         }
         try {
             String body = mapper.writeValueAsString(Map.of(
@@ -95,10 +95,10 @@ class AiTextService {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 404) {
                 throw new AiException(HttpStatus.SERVICE_UNAVAILABLE, "MODEL_NOT_FOUND",
-                        "مدل یا مسیر Ollama پیدا نشد؛ نصب مدل و آدرس سرویس را بررسی کنید.");
+                        "Ollama model or endpoint was not found. Check the installed model and service URL.");
             }
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new AiException(HttpStatus.BAD_GATEWAY, "OLLAMA_ERROR", "Ollama درخواست را پردازش نکرد.");
+                throw new AiException(HttpStatus.BAD_GATEWAY, "OLLAMA_ERROR", "Ollama could not process the request.");
             }
             try {
                 JsonNode parsed = mapper.readTree(response.body());
@@ -110,18 +110,18 @@ class AiTextService {
                 throw invalidResponse();
             }
         } catch (HttpTimeoutException exception) {
-            throw new AiException(HttpStatus.GATEWAY_TIMEOUT, "OLLAMA_TIMEOUT", "مهلت پاسخ Ollama تمام شد.");
+            throw new AiException(HttpStatus.GATEWAY_TIMEOUT, "OLLAMA_TIMEOUT", "Ollama response timed out.");
         } catch (IOException exception) {
             throw new AiException(HttpStatus.SERVICE_UNAVAILABLE, "OLLAMA_UNAVAILABLE",
-                    "اتصال به Ollama برقرار نیست؛ برنامه Ollama را اجرا کنید.");
+                    "Cannot connect to Ollama. Start the Ollama service.");
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new AiException(HttpStatus.SERVICE_UNAVAILABLE, "REQUEST_INTERRUPTED", "پردازش درخواست متوقف شد.");
+            throw new AiException(HttpStatus.SERVICE_UNAVAILABLE, "REQUEST_INTERRUPTED", "Request processing was interrupted.");
         }
     }
 
     private static AiException invalidResponse() {
-        return new AiException(HttpStatus.BAD_GATEWAY, "INVALID_OLLAMA_RESPONSE", "پاسخ Ollama معتبر نیست.");
+        return new AiException(HttpStatus.BAD_GATEWAY, "INVALID_OLLAMA_RESPONSE", "Invalid Ollama response.");
     }
 
     record Health(String status, String model, boolean modelAvailable) {}
