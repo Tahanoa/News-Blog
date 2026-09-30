@@ -1,0 +1,399 @@
+# News-Blog
+
+Spring Boot 4.1.1 / Java 17+ news-project foundation with persistent users, JWT authentication,
+role authorization and local Ollama text generation. A minimal English login/signup page is
+available at `/login` and `/register`. The home page and role panels share a small client-side app.
+
+## Run locally — Git Bash
+
+All application profiles use PostgreSQL. The default connection is
+`jdbc:postgresql://localhost:5432/postgres` with username `postgres`.
+Set the PostgreSQL password before starting. PostgreSQL is the only supported database
+for application profiles and tests.
+
+Stop any previous application on the same port. From the project directory:
+
+```bash
+read -r -s -p 'PostgreSQL password: ' DB_PASSWORD
+export DB_PASSWORD
+```
+
+Then start the application:
+
+```bash
+./mvnw clean spring-boot:run -Dspring-boot.run.profiles=ai-local -Dspring-boot.run.arguments=--server.port=8081
+```
+
+Open **http://localhost:8081/login**. The `ai-local` profile binds to `127.0.0.1` and
+stores users in the configured PostgreSQL database, just like the default profile.
+Use `clean` for the first run after this upgrade to remove the old Basic-auth configuration class.
+
+### Create the first administrator
+
+There is **no default administrator or default password**. Optionally set all three bootstrap
+variables before starting. They create an ADMIN only when no enabled ADMIN exists. They never
+overwrite an existing administrator's password or promote a public signup account.
+
+Git Bash:
+
+```bash
+export ADMIN_USERNAME='admin'
+export ADMIN_EMAIL='your-real-email@example.com'
+read -r -s -p 'Choose an admin password (12+ characters): ' ADMIN_PASSWORD
+export ADMIN_PASSWORD
+./mvnw clean spring-boot:run -Dspring-boot.run.profiles=ai-local -Dspring-boot.run.arguments=--server.port=8081
+```
+
+Use your own email and a unique password. Remove these bootstrap environment variables after
+the initial account is created. If any bootstrap value is set, all three are required.
+
+PowerShell alternative (**run in PowerShell, not Git Bash**):
+
+```powershell
+$databasePassword = Read-Host 'PostgreSQL password' -AsSecureString
+$env:DB_PASSWORD = [System.Net.NetworkCredential]::new('', $databasePassword).Password
+$env:ADMIN_USERNAME = 'admin'
+$env:ADMIN_EMAIL = 'your-real-email@example.com'
+$secret = Read-Host 'Choose an admin password (12+ characters)' -AsSecureString
+$env:ADMIN_PASSWORD = [System.Net.NetworkCredential]::new('', $secret).Password
+.\mvnw.cmd clean spring-boot:run '-Dspring-boot.run.profiles=ai-local' '-Dspring-boot.run.arguments=--server.port=8081'
+```
+
+Without `JWT_SECRET`, the local profile creates a cryptographically random signing key each
+startup. Users remain saved; previously issued JWTs stop working after restart. For stable
+tokens across restarts, generate a random Base64 key of at least 32 bytes and set `JWT_SECRET`.
+Never commit a signing key, database password, admin password, or `.env` file.
+
+## PostgreSQL / default profile
+
+Set `DB_PASSWORD` and `JWT_SECRET`. Optionally override `DB_URL` and `DB_USERNAME`;
+the defaults connect to your existing local `postgres` database as user `postgres`. The signing secret
+is Base64-encoded random bytes (minimum 32 bytes); the application fails startup without it
+outside local/test profiles. Set optional bootstrap credentials as described above.
+
+Hibernate creates and updates PostgreSQL tables from the JPA entities with
+`spring.jpa.hibernate.ddl-auto=update`. Flyway and SQL migration files have been removed;
+`V1__users.sql` is not required or executed. Existing application data and any old migration
+history table are left in place. Foreign keys are defined in the entity mappings. Privilege
+changes use a PostgreSQL transaction advisory lock, without a seed table or SQL script.
+PostgreSQL credentials are read from the environment, not hardcoded.
+
+When deploying, terminate HTTPS correctly, protect the database/backups and signing key,
+and configure explicit trusted origins/proxies only when required. The current UI is same-origin;
+no permissive CORS configuration is enabled. Do not expose the local profile publicly.
+
+## Roles
+
+| Role | Permissions currently implemented |
+|---|---|
+| `USER` — User | Own profile, password change and logout |
+| `REPORTER` — Reporter | USER permissions plus AI APIs and `/api/reporter/**` |
+| `ADMIN` — Administrator | All above, paginated user list, role and enabled-state changes |
+
+Public signup always creates an enabled USER. A client cannot submit `role`, `enabled`,
+`id`, or password hashes in signup JSON. Unknown JSON fields are rejected. Roles are checked
+against the current database user on every authenticated request, not trusted from client claims.
+The last enabled ADMIN cannot be disabled or demoted. News, comment and image endpoints are described below. Unknown routes remain denied.
+
+## API contract
+
+| Method | Path | Authentication / body |
+|---|---|---|
+| POST | `/api/auth/register` | Public: `username`, `email`, `password` |
+| POST | `/api/auth/login` | Public: `username`, `password` |
+| POST | `/api/auth/logout` | Bearer JWT; revokes all of this user's sessions |
+| GET | `/api/users/me` | Bearer JWT; own public user fields |
+| POST | `/api/users/me/password` | Bearer JWT: `currentPassword`, `newPassword` |
+| GET | `/api/admin/users?page=0&size=20` | ADMIN; size 1–100 |
+| PATCH | `/api/admin/users/{id}/access` | ADMIN: `role`, `enabled` |
+| GET | `/api/admin/ai/health` | REPORTER or ADMIN |
+| POST | `/api/admin/ai/generate` | REPORTER or ADMIN: `prompt` |
+
+User responses contain `id`, `username`, `email`, `role`, `enabled`, `createdAt`.
+Password hashes and token versions are never included. Usernames are 3–40 ASCII letters,
+digits, `.`, `_`, or `-`; usernames and emails are stored lowercase with unique database
+constraints. Passwords require at least 12 characters, at most 72 UTF-8 bytes, and use salted
+BCrypt with cost 12. Passwords are not recoverable plaintext or reversible encryption.
+Emails are stored and validated syntactically; email verification and password-reset email
+delivery are not implemented in this initial foundation.
+
+Registration returns HTTP 201 and user fields. Login returns:
+
+```json
+{
+  "accessToken": "<signed JWT>",
+  "tokenType": "Bearer",
+  "expiresIn": 900,
+  "user": { "id": "...", "username": "reader", "email": "reader@example.com", "role": "USER", "enabled": true, "createdAt": "..." }
+}
+```
+
+JWTs use HS256, a 15-minute default lifetime, issuer/audience/expiry validation and a
+database token version. Logout, password changes and role/enabled changes revoke earlier
+tokens immediately for subsequent requests. Login does not reveal whether an account is
+missing, disabled, or has a wrong password. No refresh token is issued in this initial version;
+users log in again after expiration. `security.jwt.access-ttl` may be adjusted up to one hour.
+
+The browser keeps the short-lived token in sessionStorage for the active tab, and revalidates
+it through `/api/users/me` on reload. It is never placed in cookies or URLs. API calls use the
+`Authorization: Bearer <token>` header. This browser storage is not an HTTP/server session;
+JSESSIONID is not used. Expired or revoked tokens are removed and require a new login.
+Sessions, form login and Basic authentication are disabled. CSRF is disabled because the
+application does not authenticate via cookies; if cookie-based authentication is added later,
+CSRF protection must be reconsidered. CSP forbids inline scripts/styles and user values are
+rendered with `textContent`, not HTML injection.
+
+### Quick test — Git Bash
+
+Register an ordinary user (replace the example password):
+
+```bash
+curl -i -H 'Content-Type: application/json' \
+  --data-raw '{"username":"reader","email":"reader@example.com","password":"YOUR_UNIQUE_PASSWORD"}' \
+  http://localhost:8081/api/auth/register
+```
+
+Login with the same credentials:
+
+```bash
+curl -i -H 'Content-Type: application/json' \
+  --data-raw '{"username":"reader","password":"YOUR_UNIQUE_PASSWORD"}' \
+  http://localhost:8081/api/auth/login
+```
+
+Use the returned token:
+
+```bash
+curl -i -H 'Authorization: Bearer YOUR_ACCESS_TOKEN' http://localhost:8081/api/users/me
+```
+
+For AI requests, log in as an ADMIN or REPORTER. The old `ai-test:local-test` Basic credentials
+no longer work. An ADMIN can grant reporter access:
+
+```bash
+curl -i -X PATCH -H 'Authorization: Bearer ADMIN_ACCESS_TOKEN' \
+  -H 'Content-Type: application/json' --data-raw '{"role":"REPORTER","enabled":true}' \
+  http://localhost:8081/api/admin/users/USER_UUID/access
+```
+
+After an access change, the affected user logs in again to obtain a fresh token.
+
+## Ollama
+
+Run Ollama and install `qwen3:4b-instruct`. The default URL is `http://localhost:11434`.
+Override with `OLLAMA_BASE_URL` / `OLLAMA_MODEL`. Health checks connectivity and model
+installation without generating text. Generation sends one complete system/user request,
+uses `stream: false`, temperature 0.3, context size 8192 and a 1024-token output cap.
+It returns `{ "model": "...", "text": "...", "truncated": false }` and reads final content
+only. `truncated: true` means the response hit the output limit. There is no conversation
+history between requests. Model output remains a draft requiring factual review.
+
+Only one generation is accepted at once. Default generation deadline is 180 seconds;
+connect and health deadlines are 5 seconds. Change `ai.ollama.read-timeout` if needed.
+
+For Persian requests from Windows, prefer a UTF-8 JSON file with `curl --data-binary @request.json`
+or Unicode escapes. Pasting Persian inline into some Windows Git Bash/curl combinations can
+alter the text. PowerShell can send explicit UTF-8 bytes:
+
+```powershell
+$headers = @{ Authorization = 'Bearer YOUR_ACCESS_TOKEN' }
+$json = @{ prompt = 'Write exactly two short sentences in Persian about the importance of reading. Return only the final text.' } | ConvertTo-Json -Compress
+Invoke-RestMethod -Method Post -Uri 'http://localhost:8081/api/admin/ai/generate' `
+  -Headers $headers -ContentType 'application/json; charset=utf-8' `
+  -Body ([Text.Encoding]::UTF8.GetBytes($json)) -TimeoutSec 200
+```
+
+## Limits and errors
+
+JSON POST/PUT/PATCH bodies are limited to 32 KiB, except article create/update bodies (128 KiB).
+Raw image uploads are limited to 5 MiB. Content writes are limited to 60 requests/minute/IP. Signup is limited to 10 attempts/hour/IP;
+login to 20 attempts/10 minutes/IP. The limiter is bounded to 5000 active IP/route windows,
+uses the actual connection IP and is in-memory for a single application instance. For a
+multi-instance deployment, move throttling to a shared store/gateway and explicitly configure
+trusted proxy handling; restarting the application resets the current limiter.
+
+Handled errors return `code` / `message`. No raw database or Ollama error bodies are exposed.
+
+| HTTP | Meaning |
+|---|---|
+| 400 | Invalid fields, password or JSON (including unknown fields) |
+| 401 | Invalid login or missing/invalid/expired/revoked JWT |
+| 403 | Role lacks access |
+| 409 | Username/email duplicate or last-admin protection |
+| 413 | Request body too large |
+| 429 | Login/signup limit or AI already busy |
+| 502 | Invalid/upstream Ollama response |
+| 503 | Ollama unavailable or configured model missing |
+| 504 | Ollama deadline exceeded |
+
+## Tests
+
+```bash
+./mvnw clean test
+```
+
+Tests require a dedicated disposable PostgreSQL database configured through `TEST_DB_URL`,
+`TEST_DB_USERNAME` and `TEST_DB_PASSWORD`. The test profile uses `create-drop`, so never point
+these variables at a database containing data you want to keep. No test database is created
+by this update and no tests were run. Ollama tests use an HTTP stub instead of a downloaded model. They cover signup/password hashing, login, all roles,
+privilege injection, disabled users, logout/password/access-change revocation, expired/tampered
+tokens, issuer/audience/required claims, strong-key configuration, last-admin protection,
+request limits, static pages/CSP and AI behavior. Live PostgreSQL connectivity and actual
+model quality/speed require testing in the deployment environment.
+
+
+## News, comments and images
+
+Published news and approved comments are public GET endpoints. Image metadata/content URLs are
+public regardless of the attached article status. Draft/archived article text and image listings
+remain visible only to their reporter or an administrator with a valid JWT. All content writes,
+comment submission and account/panel operations require `Authorization: Bearer <accessToken>`.
+Cookies and JSESSIONID are not used for authentication. The security context is never saved to an HTTP session.
+API messages, source prompts and the initial login/signup UI are English; AI-generated final
+text is explicitly requested in fluent, formal Persian. User-provided Persian content is supported.
+
+| Method | Endpoint | Access / behavior |
+|---|---|---|
+| GET | `/api/news?page=0&size=20&q=library&category=Local&status=PUBLISHED&mine=false` | Paginated search; USER sees published news, REPORTER also sees own drafts/archives, ADMIN sees all |
+| GET | `/api/news/{id}` | Same visibility, includes sanitized `bodyHtml` |
+| POST | `/api/news` | REPORTER/ADMIN, creates an owned DRAFT |
+| PUT | `/api/news/{id}` | Reporter edits own DRAFT; ADMIN edits any article; requires current `version` |
+| PATCH | `/api/news/{id}/status` | ADMIN only; `{ "version": 0, "status": "PUBLISHED" }` (DRAFT/PUBLISHED/ARCHIVED) |
+| DELETE | `/api/news/{id}?version=1` | ADMIN only; archives rather than destroying associated content |
+| GET | `/api/news/{id}/comments` | Paginated; readers see approved comments plus their own; article reporter/ADMIN see moderation queue too |
+| POST | `/api/news/{id}/comments` | Any authenticated user on published news; `{ "body": "Comment", "parentId": null }`; starts PENDING |
+| PUT | `/api/comments/{id}` | Author only; `{ "version": 0, "body": "Updated comment" }`; resets to PENDING |
+| PATCH | `/api/comments/{id}/moderation` | Article reporter/ADMIN; `{ "version": 0, "status": "APPROVED" }` (PENDING/APPROVED/REJECTED) |
+| DELETE | `/api/comments/{id}?version=1` | Author or article reporter/ADMIN; comments with replies cannot be deleted |
+| GET | `/api/news/{id}/images` | Paginated image metadata; does not load image bytes into list responses |
+| POST | `/api/news/{id}/images?alt=Library` | Article editor; raw PNG/JPEG binary upload |
+| GET | `/api/images/{id}` | Public metadata, dimensions, byte size and public content URL |
+| GET | `/api/images/{id}/content` | Public binary response with image media type and no-store caching |
+| DELETE | `/api/images/{id}` | Article editor; removes image and clears its cover reference |
+
+Create a draft (English JSON source; Persian article values are also supported via UTF-8):
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json; charset=utf-8' \
+  --data-binary '{"title":"Library opening hours","summary":"The library extends opening hours.","bodyHtml":"<h2>Details</h2><p>The library will stay open until eight.</p>","category":"Local","coverImageId":null}' \
+  http://localhost:8081/api/news
+```
+
+To update, send the same article fields plus its latest `version`. Omitted/null `coverImageId`
+clears the cover. Upload an image first and then use its ID as the cover on the same article.
+HTML supports headings, paragraphs, lists, tables, formatting and safe links. Scripts, event
+handlers, iframes and arbitrary CSS are stripped server-side by jsoup.
+Inline images reference uploaded images belonging to the same article through
+`<img data-image-id="UUID" alt="Description">`. The server validates ownership and generates
+the internal image content URL. Remote images, arbitrary URLs and Base64/data URIs are not accepted.
+The visual editor inserts uploaded or queued images at the text cursor, without requiring HTML knowledge. Comments are plain text: render
+with `textContent`, never `innerHTML`. Titles, summaries, categories and alt text are plain text too.
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" -H 'Content-Type: image/png' \
+  --data-binary @photo.png "http://localhost:8081/api/news/$NEWS_ID/images?alt=Library"
+```
+
+Images are stored as PostgreSQL BYTEA rather than Base64 (no Base64 expansion). Only PNG/JPEG
+are accepted; declared type must match decoded bytes. Uploads are bounded to 5 MiB, 8000 pixels
+per dimension and 16 megapixels, and are re-encoded to discard metadata/trailing payloads.
+Maximum 20 images/article. Image responses expose no filesystem paths or client filenames.
+For browser display, use `/api/images/{id}/content` directly as the image source, without JWT
+headers or token query strings. All uploaded image URLs are public, including images attached
+to drafts and archived stories. Article text, private image listings and image writes retain
+their ownership/role checks. Upload and deletion still require JWT.
+
+Comments support one reply level, with an approved top-level parent on the same news item.
+Maximum 100 comments/user/article. Pagination sizes are 1 to 100. Mutations serialize on the
+article; news/comments also use optimistic versions to return 409 for stale updates.
+Hibernate manages tables and foreign keys directly in PostgreSQL, without migration scripts. News ownership and comment moderation are checked in the service against
+JWT-authenticated identity; client-supplied authors, roles and publication fields are rejected.
+
+This content update has not been tested against a running application or PostgreSQL database.
+
+
+## Browser pages
+
+| URL | Page |
+|---|---|
+| `/` or `/news` | Published news with search, category filter and pagination |
+| `/news/{uuid}` | Formatted article, public images, comment submission/replies, author editing and permitted moderation |
+| `/reporter` | Own drafts for reporters; all articles for admins; editor, image upload/delete/cover and Persian AI helper |
+| `/admin` | Paginated accounts, role/enabled controls and link to editorial publication controls |
+| `/login`, `/register` | Responsive account forms with a shared editorial theme |
+
+UI labels and source instructions are English. Persian article/comment text is rendered with
+automatic text direction; the AI helper requests Persian output and can place it into the editor.
+Use ADMIN bootstrap credentials to create the first manager, then assign REPORTER from the
+admin panel. Only admins publish, archive or return news to draft in the editorial panel.
+
+The browser retains its short-lived Bearer token in sessionStorage across reloads in the same
+tab and validates it with the server on startup. Logout, expiry and revocation clear it. This does
+not create a server session or cookie authentication. Published news, article images and approved
+comments can be read without logging in; comment submission and editing require JWT.
+Page shells/assets are public; backend checks continue to protect private article data.
+Public image URLs load directly in normal image elements. Unsaved image previews use temporary Blob URLs.
+The client shows approved comments and the current author's pending comments; article editors
+also see the moderation queue. API failures are displayed above the active page.
+
+The visual editor queues local images and uploads them when the article is saved. A new draft
+is created before its images are attached, then the final article body and cover are saved. If
+an upload fails, the editor retains pending changes; successful uploads are not repeated on retry.
+Existing-image deletion saves current edits first and removes cover/body references server-side.
+Review AI output before publishing. No knowledge of HTML is needed.
+No browser or integration tests were run for this UI update.
+
+
+## AI article autofill and inline images
+
+`POST /api/admin/ai/news-draft` accepts `{ "prompt": "Source news text or instructions" }`
+and returns `{ "model": "...", "title": "...", "summary": "...", "category": "...", "bodyHtml": "..." }`.
+Only REPORTER/ADMIN can call it. Ollama receives a JSON schema through `format`; the application
+validates all fields and limits, sanitizes generated HTML and rejects incomplete generation.
+Field keys and instructions are English; all generated field values are requested in Persian.
+The editor's **Generate complete story** button assigns the four text fields at once. Cover,
+article identity/owner and publication status remain outside AI control. Review and save to persist;
+AI generation does not automatically publish or create real-world facts unsupported by the prompt.
+The existing plain-text generation endpoint remains available through **Generate text only**.
+
+An inline image must already belong to the article. Invalid or cross-article image IDs are rejected.
+Deleting an image removes its inline references and clears its cover reference. Inline images are
+hydrated with the same image endpoint as covers and are not duplicated in the remaining gallery.
+News/comment/image writes and moderation remain JWT-protected despite public published reads.
+Access tokens still expire after the configured duration (15 minutes by default); reload alone no
+longer logs out an account while its token remains valid. No browser/API tests were run for this update.
+
+
+## Editorial theme and visual writing studio
+
+The public publication, reading page, account pages, editorial desk and people/access panel
+share a responsive Tailwind theme: warm paper, deep green, lime accents, featured stories,
+category navigation, news cards and compact workspace navigation. Persian content uses automatic
+text direction while interface labels and source instructions remain English.
+
+The article studio offers paragraphs, H2/H3 headings, bold/italic/underline, ordered and unordered
+lists, quotes, links, undo/redo and reading preview. Paste inserts plain text (or supported image
+files), avoiding pasted styling and remote HTML. Drag PNG/JPEG files into the story to place them
+at the drop location; drag them into the media panel to queue them without inline insertion.
+Select files with Add images, drag library images into the body, or use Insert into story.
+Images already inside the story can be dragged to another position. A separate chooser sets
+the cover. Queued images support editable descriptions. Existing limits remain 20 images per
+story and 5 MiB per PNG/JPEG. Server-side decoding and HTML sanitization remain in force.
+
+Unsaved edits show a status indicator and warn before navigation/reload. Saving blocks editor
+changes until the request sequence finishes. Draft text is not automatically persisted; save it
+before leaving. Login continues to survive a same-tab reload until JWT expiry/revocation.
+
+Tailwind CSS is compiled and committed as `src/main/resources/static/app.css`; no CDN or
+frontend Node process is needed to run Spring Boot. To rebuild after changing HTML, JavaScript
+classes or `ui/styles.css`:
+
+```bash
+npm ci
+npm run build:css
+```
+
+Tailwind build packages are pinned in package-lock.json. This redesign changes no database
+technology: PostgreSQL remains the only supported database. Images remain stored as BYTEA.
+No automated, browser or database tests were run for the redesign; only CSS build, JavaScript
+syntax validation and Java compilation were performed.
